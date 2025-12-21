@@ -47,16 +47,20 @@ export async function testConnection(useCache = false): Promise<boolean> {
       console.log('✓ Database connection successful')
     }
     
-    // Update cache
-    healthCache = { status: true, timestamp: Date.now() }
+    // Only update cache when caching is enabled
+    if (useCache) {
+      healthCache = { status: true, timestamp: Date.now() }
+    }
     return true
   } catch (error) {
     if (!useCache) {
       console.error('✗ Database connection failed:', error)
     }
     
-    // Update cache
-    healthCache = { status: false, timestamp: Date.now() }
+    // Only update cache when caching is enabled
+    if (useCache) {
+      healthCache = { status: false, timestamp: Date.now() }
+    }
     return false
   }
 }
