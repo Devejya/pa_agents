@@ -21,12 +21,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  text-decoration: none;
-  transition: opacity var(--transition-fast);
-}
-
-.logo:hover {
-  opacity: 0.8;
 }
 
 .logoMark {
@@ -36,12 +30,11 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-gold-primary);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
   font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 400;
-  color: var(--color-gold-primary);
+  color: #FFFFFF;
 }
 
 .logoText {

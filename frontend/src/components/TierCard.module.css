@@ -13,21 +13,23 @@
 
 .card:hover {
   background: var(--color-bg-card-hover);
-  border-color: var(--color-border);
+  border-color: var(--color-accent-light);
   transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(124, 58, 237, 0.1);
 }
 
 .highlighted {
-  border-color: var(--color-gold-primary);
+  border-color: var(--color-accent-primary);
   background: linear-gradient(
     135deg,
     var(--color-bg-card) 0%,
-    rgba(201, 169, 98, 0.05) 100%
+    rgba(124, 58, 237, 0.05) 100%
   );
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.1);
 }
 
 .highlighted:hover {
-  border-color: var(--color-gold-light);
+  border-color: var(--color-accent-light);
 }
 
 .badge {
@@ -36,8 +38,8 @@
   left: 50%;
   transform: translateX(-50%);
   padding: var(--space-xs) var(--space-md);
-  background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-dark));
-  color: var(--color-bg-primary);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
+  color: #FFFFFF;
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.05em;
@@ -76,7 +78,7 @@
 .currency {
   font-size: 1.25rem;
   font-weight: 400;
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
   align-self: flex-start;
   margin-top: 0.5rem;
 }
@@ -115,7 +117,7 @@
 
 .checkIcon {
   flex-shrink: 0;
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
   font-size: 0.875rem;
   margin-top: 2px;
 }
@@ -140,14 +142,14 @@
 }
 
 .buttonHighlighted {
-  background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-dark));
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
   border-color: transparent;
-  color: var(--color-bg-primary);
+  color: #FFFFFF;
   font-weight: 500;
 }
 
 .buttonHighlighted:hover {
-  background: linear-gradient(135deg, var(--color-gold-light), var(--color-gold-primary));
+  background: linear-gradient(135deg, var(--color-accent-light), var(--color-accent-primary));
   border-color: transparent;
   transform: scale(1.02);
 }

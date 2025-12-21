@@ -28,11 +28,10 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-gold-dark);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
   font-family: var(--font-display);
   font-size: 1rem;
-  color: var(--color-gold-primary);
+  color: #FFFFFF;
 }
 
 .logoText {

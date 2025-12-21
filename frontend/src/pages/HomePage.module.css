@@ -26,11 +26,11 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 600px;
-  height: 600px;
+  width: 800px;
+  height: 800px;
   background: radial-gradient(
     circle,
-    rgba(201, 169, 98, 0.08) 0%,
+    rgba(124, 58, 237, 0.1) 0%,
     transparent 70%
   );
   pointer-events: none;
@@ -44,6 +44,19 @@
   animation: fadeInUp 0.8s ease forwards;
 }
 
+.heroBadge {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-md);
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 20px;
+  margin-bottom: var(--space-xl);
+}
+
 .heroTitle {
   font-family: var(--font-display);
   font-size: clamp(2.5rem, 6vw, 4rem);
@@ -55,16 +68,14 @@
 
 .heroAccent {
   display: block;
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
   font-style: italic;
 }
 
 .heroSubtitle {
   font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-style: italic;
+  font-size: 1.5rem;
   color: var(--color-text-secondary);
-  letter-spacing: 0.1em;
   margin-bottom: var(--space-xl);
 }
 
@@ -73,6 +84,14 @@
   color: var(--color-text-secondary);
   line-height: 1.7;
   max-width: 600px;
+  margin: 0 auto var(--space-lg);
+}
+
+.heroWaitlist {
+  font-size: 1rem;
+  color: var(--color-accent-primary);
+  font-weight: 500;
+  max-width: 500px;
   margin: 0 auto;
 }
 
@@ -135,7 +154,7 @@
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 400;
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
   margin-bottom: var(--space-md);
 }
 

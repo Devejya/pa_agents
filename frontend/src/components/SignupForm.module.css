@@ -7,6 +7,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   animation: fadeInUp 0.5s ease forwards;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
 .tierInfo {
@@ -30,7 +31,7 @@
 .tierName {
   font-family: var(--font-display);
   font-size: 1.5rem;
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
 }
 
 .tierPrice {
@@ -73,8 +74,8 @@
 
 .input:focus {
   outline: none;
-  border-color: var(--color-gold-primary);
-  box-shadow: 0 0 0 3px rgba(201, 169, 98, 0.1);
+  border-color: var(--color-accent-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 }
 
 .input:disabled {
@@ -91,10 +92,10 @@
 .submitButton {
   width: 100%;
   padding: var(--space-md) var(--space-xl);
-  background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-dark));
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
   border: none;
   border-radius: var(--radius-md);
-  color: var(--color-bg-primary);
+  color: #FFFFFF;
   font-size: 1rem;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -107,7 +108,7 @@
 }
 
 .submitButton:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--color-gold-light), var(--color-gold-primary));
+  background: linear-gradient(135deg, var(--color-accent-light), var(--color-accent-primary));
   transform: translateY(-1px);
 }
 
@@ -167,7 +168,7 @@
 }
 
 .changeLink:hover {
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
 }
 
 /* Success State */
@@ -177,10 +178,11 @@
   margin: 0 auto;
   padding: var(--space-3xl) var(--space-2xl);
   background: var(--color-bg-card);
-  border: 1px solid var(--color-gold-primary);
+  border: 1px solid var(--color-accent-primary);
   border-radius: var(--radius-xl);
   text-align: center;
   animation: fadeInUp 0.5s ease forwards;
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.1);
 }
 
 .successIcon {
@@ -190,10 +192,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-gold-primary), var(--color-gold-dark));
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
   border-radius: 50%;
   font-size: 1.75rem;
-  color: var(--color-bg-primary);
+  color: #FFFFFF;
 }
 
 .successTitle {
@@ -211,7 +213,7 @@
 }
 
 .successMessage strong {
-  color: var(--color-gold-primary);
+  color: var(--color-accent-primary);
 }
 
 .backLink {
@@ -228,7 +230,7 @@
 
 .backLink:hover {
   background: var(--color-bg-secondary);
-  border-color: var(--color-gold-primary);
+  border-color: var(--color-accent-primary);
 }
 
 @keyframes fadeInUp {

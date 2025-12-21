@@ -3,9 +3,9 @@ import { Tier } from '../types'
 export const tiers: Tier[] = [
   {
     level: 1,
-    name: 'Essential',
+    name: 'Guide',
     price: 150,
-    description: 'Intelligent assistance for the discerning professional',
+    description: 'Your intelligent assistant for daily essentials',
     features: [
       'Intelligent & personalized calendar management',
       'Travel arrangements with curated recommendations',
@@ -15,11 +15,11 @@ export const tiers: Tier[] = [
   },
   {
     level: 2,
-    name: 'Premier',
+    name: 'Partner',
     price: 230,
-    description: 'An assistant that evolves with you',
+    description: 'An assistant that learns and grows with you',
     features: [
-      'Everything in Essential',
+      'Everything in Guide',
       'Adaptive learning of your preferences',
       'Thoughtful gift suggestions for loved ones',
       'Draft communications on your behalf',
@@ -29,11 +29,11 @@ export const tiers: Tier[] = [
   },
   {
     level: 3,
-    name: 'Private',
+    name: 'Chief of Staff',
     price: 400,
-    description: 'Complete delegation of your communications',
+    description: 'Full delegation of your professional life',
     features: [
-      'Everything in Premier',
+      'Everything in Partner',
       'Voice calls for bookings & reservations',
       'Incoming call management & screening',
       'Real-time transcription & summaries',

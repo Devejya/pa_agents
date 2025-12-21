@@ -21,17 +21,20 @@ export function HomePage() {
         {/* Hero Section */}
         <section className={styles.hero}>
           <div className={styles.heroContent}>
+            <p className={styles.heroBadge}>Early Access</p>
             <h1 className={styles.heroTitle}>
-              Your AI
-              <span className={styles.heroAccent}> Executive Assistant</span>
+              We're building
+              <span className={styles.heroAccent}> Yennifer</span>
             </h1>
             <p className={styles.heroSubtitle}>
-              Discrete. Intelligent. Available 24/7.
+              An AI executive assistant for your daily needs
             </p>
             <p className={styles.heroDescription}>
-              Reclaim your time with an AI assistant that manages your calendar, 
-              arranges travel, handles communications, and anticipates your needs—
-              available around the clock, so you can focus on what matters most.
+              Yennifer manages your calendar, arranges travel, handles communications, 
+              and anticipates your needs—available 24/7 so you can focus on what matters most.
+            </p>
+            <p className={styles.heroWaitlist}>
+              We're opening our early waitlist for a select group. Join now to be among the first.
             </p>
           </div>
           <div className={styles.heroGlow}></div>

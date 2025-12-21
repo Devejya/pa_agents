@@ -11,7 +11,7 @@ export function Footer() {
           <span className={styles.logoText}>Yennifer</span>
         </div>
         <p className={styles.tagline}>
-          Discrete. Intelligent. Available 24/7.
+          Your AI executive assistant, available 24/7.
         </p>
         <p className={styles.copyright}>
           © {currentYear} Yennifer AI. All rights reserved.
