@@ -33,9 +33,9 @@ app.use(express.json())
 // API Routes
 app.use('/api/signup', signupRouter)
 
-// Health check
+// Health check - uses cached DB status to avoid exhausting connection pool
 app.get('/api/health', async (_req, res) => {
-  const dbConnected = await testConnection()
+  const dbConnected = await testConnection(true) // useCache = true
   res.json({
     status: dbConnected ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),

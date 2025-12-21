@@ -28,15 +28,35 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle database client', err)
 })
 
-export async function testConnection(): Promise<boolean> {
+// Cache for health check to avoid exhausting connection pool
+let healthCache: { status: boolean; timestamp: number } | null = null
+const HEALTH_CACHE_TTL_MS = 30000 // 30 seconds
+
+export async function testConnection(useCache = false): Promise<boolean> {
+  // Return cached status if valid and caching is enabled
+  if (useCache && healthCache && Date.now() - healthCache.timestamp < HEALTH_CACHE_TTL_MS) {
+    return healthCache.status
+  }
+
   try {
-    const client = await pool.connect()
-    await client.query('SELECT NOW()')
-    client.release()
-    console.log('✓ Database connection successful')
+    // Use pool.query() instead of pool.connect() - it handles connection
+    // acquisition/release internally and is more efficient for simple queries
+    await pool.query('SELECT 1')
+    
+    if (!useCache) {
+      console.log('✓ Database connection successful')
+    }
+    
+    // Update cache
+    healthCache = { status: true, timestamp: Date.now() }
     return true
   } catch (error) {
-    console.error('✗ Database connection failed:', error)
+    if (!useCache) {
+      console.error('✗ Database connection failed:', error)
+    }
+    
+    // Update cache
+    healthCache = { status: false, timestamp: Date.now() }
     return false
   }
 }
