@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePostHog } from 'posthog-js/react'
 import { submitSignup } from '../services/api'
 import { TierLevel, SignupResponse } from '../types'
+import { tiers } from '../data/tiers'
 
 interface UseSignupReturn {
   isLoading: boolean
@@ -28,9 +29,10 @@ export function useSignup(): UseSignupReturn {
         setIsSuccess(true)
         
         // Track successful signup with PostHog
+        const tierData = tiers.find(t => t.level === tier)
         posthog?.capture('waitlist_signup', {
           tier: tier,
-          tier_name: tier === 1 ? 'Essential' : tier === 2 ? 'Premier' : 'Private',
+          tier_name: tierData?.name ?? 'Unknown',
         })
       } else {
         throw new Error(response.message || 'Signup failed')
