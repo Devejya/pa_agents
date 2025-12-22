@@ -15,6 +15,7 @@ interface TierInfo {
   description: string
 }
 
+// Keep tier data in sync with frontend/src/data/tiers.ts
 const tierData: Record<number, TierInfo> = {
   1: { name: 'Guide', price: 150, description: 'Your intelligent assistant for daily essentials' },
   2: { name: 'Partner', price: 230, description: 'An assistant that learns and grows with you' },

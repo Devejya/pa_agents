@@ -44,12 +44,15 @@ export function TierCard({ tier, animationDelay = 0 }: TierCardProps) {
       </div>
       
       <ul className={styles.features}>
-        {tier.features.map((feature, index) => (
-          <li key={index} className={styles.feature}>
-            <span className={styles.checkIcon}>✓</span>
-            {feature}
-          </li>
-        ))}
+        {tier.features.map((feature, index) => {
+          const isAllFeaturesLine = feature.startsWith('All ') && feature.endsWith('+')
+          return (
+            <li key={index} className={`${styles.feature} ${isAllFeaturesLine ? styles.featureHeader : ''}`}>
+              {!isAllFeaturesLine && <span className={styles.checkIcon}>✓</span>}
+              {feature}
+            </li>
+          )
+        })}
       </ul>
       
       <button 
