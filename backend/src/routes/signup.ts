@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { pool } from '../config/database.js'
+import { sendWelcomeEmail } from '../services/email.js'
 
 const router = Router()
 
@@ -60,6 +61,11 @@ router.post('/', async (req: Request<object, object, SignupBody>, res: Response)
     const returnedEventId = result.rows[0]?.event_id || eventId
 
     console.log(`✓ Signup recorded: ${normalizedEmail} (Tier ${tier})`)
+
+    // Send welcome email asynchronously (don't block response)
+    sendWelcomeEmail(normalizedEmail, tier).catch((err) => {
+      console.error('Failed to send welcome email:', err)
+    })
 
     res.status(201).json({
       success: true,

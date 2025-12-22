@@ -10,6 +10,7 @@
     "db:init": "tsx src/scripts/initDb.ts"
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
@@ -26,4 +27,3 @@
     "typescript": "^5.7.2"
   }
 }
-

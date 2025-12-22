@@ -43,9 +43,10 @@ export function HomePage() {
         {/* Pricing Section */}
         <section className={styles.pricing}>
           <div className={styles.pricingHeader}>
-            <h2 className={styles.pricingTitle}>Choose Your Experience</h2>
+            <p className={styles.earlyBirdBadge}>Early Bird Pricing</p>
+            <h2 className={styles.pricingTitle}>Lock In Your Rate</h2>
             <p className={styles.pricingSubtitle}>
-              Select the level of assistance that fits your lifestyle
+              Join now to secure exclusive early bird pricing—locked in forever.
             </p>
           </div>
           
@@ -58,6 +59,10 @@ export function HomePage() {
               />
             ))}
           </div>
+          
+          <p className={styles.pricingNote}>
+            You won't be charged until we launch. Your early bird price is locked in when you join the waitlist.
+          </p>
         </section>
 
         {/* Trust Section */}

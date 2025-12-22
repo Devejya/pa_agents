@@ -5,6 +5,16 @@ import { TierLevel, Tier } from '../types'
 import { tiers } from '../data/tiers'
 import styles from './SignupForm.module.css'
 
+// Email icon component
+function EmailIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+  )
+}
+
 interface SignupFormProps {
   selectedTier: TierLevel
 }
@@ -29,12 +39,22 @@ export function SignupForm({ selectedTier }: SignupFormProps) {
         <h2 className={styles.successTitle}>Welcome to Yennifer</h2>
         <p className={styles.successMessage}>
           You're on the waitlist for our <strong>{tier?.name}</strong> plan.
-          <br />
-          We'll be in touch soon.
         </p>
-        <Link to="/" className={styles.backLink}>
-          Return Home
-        </Link>
+        
+        <div className={styles.emailNotice}>
+          <div className={styles.emailIcon}>
+            <EmailIcon />
+          </div>
+          <p className={styles.emailText}>
+            We've sent a confirmation email to your inbox.
+            <br />
+            <span className={styles.emailMuted}>Please check your spam folder if you don't see it.</span>
+          </p>
+        </div>
+        
+        <p className={styles.noReply}>
+          This is an automated email. Please do not reply.
+        </p>
       </div>
     )
   }

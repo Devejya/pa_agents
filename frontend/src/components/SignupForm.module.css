@@ -216,6 +216,48 @@
   color: var(--color-accent-primary);
 }
 
+.emailNotice {
+  margin-top: var(--space-xl);
+  padding: var(--space-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  text-align: left;
+}
+
+.emailIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-accent-primary), var(--color-accent-dark));
+  border-radius: 50%;
+  color: #FFFFFF;
+}
+
+.emailText {
+  font-size: 0.9375rem;
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.emailMuted {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.noReply {
+  margin-top: var(--space-lg);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .backLink {
   display: inline-block;
   margin-top: var(--space-2xl);
