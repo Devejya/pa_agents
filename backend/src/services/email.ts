@@ -232,3 +232,63 @@ export async function sendWelcomeEmail(
   }
 }
 
+// Admin notification email
+const ADMIN_EMAIL = 'draghuva@gmail.com'
+
+export async function sendSignupNotification(
+  userEmail: string,
+  tierLevel: number
+): Promise<{ success: boolean; error?: string }> {
+  if (!apiKey) {
+    return { success: false, error: 'Email service not configured' }
+  }
+
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'hello@yennifer.ai'
+  const fromName = process.env.SENDGRID_FROM_NAME || 'Yennifer'
+  const tier = tierData[tierLevel] || tierData[1]
+  const timestamp = new Date().toLocaleString('en-US', { 
+    timeZone: 'America/Toronto',
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  })
+
+  const msg = {
+    to: ADMIN_EMAIL,
+    from: {
+      email: fromEmail,
+      name: fromName,
+    },
+    subject: `🎉 New Signup: ${tier.name} - ${userEmail}`,
+    text: `New Yennifer Waitlist Signup!\n\nEmail: ${userEmail}\nPlan: ${tier.name} ($${tier.price}/month)\nTime: ${timestamp}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <h2 style="color: #7C3AED; margin: 0 0 20px 0;">🎉 New Waitlist Signup!</h2>
+        <table style="border-collapse: collapse;">
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #6B7280; font-weight: 500;">Email:</td>
+            <td style="padding: 8px 0;"><strong>${userEmail}</strong></td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #6B7280; font-weight: 500;">Plan:</td>
+            <td style="padding: 8px 0;"><strong style="color: #7C3AED;">${tier.name}</strong> ($${tier.price}/month)</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #6B7280; font-weight: 500;">Time:</td>
+            <td style="padding: 8px 0;">${timestamp}</td>
+          </tr>
+        </table>
+      </div>
+    `,
+  }
+
+  try {
+    await sgMail.send(msg)
+    console.log(`✓ Admin notification sent for ${userEmail}`)
+    return { success: true }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('✗ Failed to send admin notification:', errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
+

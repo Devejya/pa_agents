@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { pool } from '../config/database.js'
-import { sendWelcomeEmail } from '../services/email.js'
+import { sendWelcomeEmail, sendSignupNotification } from '../services/email.js'
 
 const router = Router()
 
@@ -62,9 +62,13 @@ router.post('/', async (req: Request<object, object, SignupBody>, res: Response)
 
     console.log(`✓ Signup recorded: ${normalizedEmail} (Tier ${tier})`)
 
-    // Send welcome email asynchronously (don't block response)
+    // Send emails asynchronously (don't block response)
     sendWelcomeEmail(normalizedEmail, tier).catch((err) => {
       console.error('Failed to send welcome email:', err)
+    })
+    
+    sendSignupNotification(normalizedEmail, tier).catch((err) => {
+      console.error('Failed to send signup notification:', err)
     })
 
     res.status(201).json({
