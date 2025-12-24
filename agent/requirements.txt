@@ -1,0 +1,26 @@
+# LangChain Gmail Agent Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core LangChain
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-google-community[gmail]>=2.0.0
+langgraph>=0.2.0
+
+# Google Auth
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.2.0
+
+# Email parsing
+beautifulsoup4>=4.12.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# CLI interface
+rich>=13.0.0
+
+# Encryption for style profile
+cryptography>=41.0.0
+
