@@ -1,0 +1,44 @@
+# Yennifer API Service Dependencies
+# Install with: pip install -r requirements.txt
+
+# FastAPI
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.5.0
+pydantic-settings>=2.0.0
+
+# CORS and HTTP
+python-multipart>=0.0.9
+
+# Environment
+python-dotenv>=1.0.0
+
+# Logging
+structlog>=24.0.0
+
+# Agent dependencies (will import from agent package)
+# These are duplicated from agent/requirements.txt for standalone running
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-google-community[gmail]>=2.0.0
+langgraph>=0.2.0
+
+# Google Auth
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.2.0
+
+# Email parsing
+beautifulsoup4>=4.12.0
+
+# Encryption for style profile
+cryptography>=41.0.0
+
+# User Network API client
+httpx>=0.26.0
+asyncpg>=0.29.0
+
+# Authentication
+PyJWT>=2.8.0
+authlib>=1.3.0
+

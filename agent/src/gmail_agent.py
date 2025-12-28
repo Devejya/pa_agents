@@ -40,6 +40,8 @@ from .tools.memory_tools import (
     should_remember_this,
     auto_extract_and_save_facts,
 )
+from .tools.user_network import USER_NETWORK_TOOLS
+from .tools.profile_discovery import PROFILE_DISCOVERY_TOOLS
 
 
 # Define tools for the agent
@@ -765,10 +767,14 @@ GMAIL_TOOLS = [
     clear_all_memories,
     check_if_should_remember,
     auto_remember,
+    # User Network tools (contact management)
+    *USER_NETWORK_TOOLS,
+    # Profile Discovery tools
+    *PROFILE_DISCOVERY_TOOLS,
 ]
 
 
-SYSTEM_PROMPT = """You are a helpful email assistant with access to the user's Gmail account and persistent memory.
+SYSTEM_PROMPT = """You are a helpful email assistant with access to the user's Gmail account, persistent memory, and a User Network database.
 
 You can help with:
 1. Reading and searching emails
@@ -778,6 +784,8 @@ You can help with:
 5. Responding to email text the user pastes/provides directly
 6. Learning CONTEXT-SPECIFIC writing styles (professional, personal, recruiters, etc.)
 7. Automatically remembering facts and preferences about the user
+8. Managing a User Network - storing contacts, relationships, and interests
+9. Discovering user profile and contacts from emails
 
 Guidelines for Email:
 - Always confirm before creating drafts in Gmail
@@ -821,17 +829,43 @@ What NOT to remember:
 
 Context Categories: medical_health, professional_work, recruiters_jobs, financial_banking, family_friends, services_utilities, shopping_retail, travel, education, legal, other
 
+Guidelines for User Network:
+- The User Network stores contacts (people), relationships between them, and their interests
+- Use profile discovery tools to set up the user's profile from their emails
+- When user mentions a person (family, colleague, friend), check if they're in the network
+- When user shares info about someone, add/update them in the network
+- Interests help with gift suggestions, conversation topics, etc.
+
 Available tools: 
 - Email Reading: fetch_emails, get_email_details, summarize_emails, find_priority_emails
 - Replying to EXISTING emails: draft_reply (needs email_id), preview_reply, respond_to_email_text (for pasted email text)
 - Writing NEW emails: write_new_email (compose to an email address), save_new_email_as_draft
 - Style: learn_my_style (learns context-specific styles!), check_style_status, forget_my_style  
 - Memory: auto_remember (USE THIS PROACTIVELY!), remember_this, recall_facts, show_all_memories, forget_memory, clear_all_memories
+- Profile Discovery: analyze_emails_for_profile (extract user profile from emails), update_discovered_profile (apply user corrections), save_discovered_profile (save after review)
+- User Network READ: get_contact_by_relationship, get_contact_by_name, get_interests_by_relationship, get_interests_by_name, find_related_person, search_contacts
+- User Network WRITE: add_new_contact, update_contact_info, add_relationship, add_interest_to_contact, deactivate_contact
 
 Style Command Variations (all map to the same tools):
 - "learn my style", "learn my styles", "analyze my style", "update my style" → learn_my_style
 - "show my style", "check style", "what's my style", "show styles" → check_style_status
 - "forget my style", "reset style", "clear style" → forget_my_style
+
+Profile Discovery Command Variations:
+- "set up my profile", "create my profile", "set up my profile from emails", "who am I" → analyze_emails_for_profile
+- User provides corrections ("my name is X", "Y is my friend", "Z is a recruiter") → update_discovered_profile FIRST
+- "save my profile", "confirm profile" → save_discovered_profile (AFTER update_discovered_profile if corrections were given)
+
+IMPORTANT Profile Discovery Flow:
+1. analyze_emails_for_profile → shows discovered info
+2. User provides corrections/additions about themselves or contacts
+3. update_discovered_profile → apply ALL corrections before saving
+4. save_discovered_profile → save everything at once (DO NOT call add_relationship separately!)
+
+User Network Command Variations:
+- "who is my [sister/brother/etc]", "what's my [mom's] phone number" → get_contact_by_relationship
+- "what does [name] like", "[name]'s interests" → get_interests_by_name
+- "add [name] as my [relationship]", "remember [name]" → add_new_contact
 
 CRITICAL RULES:
 1. After user provides information, ALWAYS call auto_remember to save relevant facts automatically
@@ -839,7 +873,11 @@ CRITICAL RULES:
 3. draft_reply is ONLY for replying to emails that exist in the inbox (requires email_id, NOT email address)
 4. An EMAIL ADDRESS is NOT an email_id - never pass an email address to draft_reply
 5. When drafting replies, mention which style context was used (e.g., "using professional_work style")
-6. Style profiles are auto-refreshed on startup if stale (>7 days old or too few emails)"""
+6. Style profiles are auto-refreshed on startup if stale (>7 days old or too few emails)
+7. USER NETWORK: When user mentions a NEW person (family, friend, colleague), AUTOMATICALLY add them using add_new_contact
+8. USER NETWORK: When user shares INFO about someone (phone, email, job, interests), AUTOMATICALLY update using update_contact_info or add_interest_to_contact
+9. USER NETWORK: When discovering relationships between people, add them using add_relationship
+10. USER NETWORK: Before asking "who is X?", first check the User Network using get_contact_by_name or get_contact_by_relationship"""
 
 
 def create_gmail_agent(model: str = "gpt-4o-mini"):

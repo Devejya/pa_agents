@@ -8,6 +8,7 @@ Style profiles are encrypted and stored locally.
 
 import base64
 from datetime import datetime
+from typing import Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -357,7 +358,7 @@ def analyze_contextual_styles(num_emails: int = 50) -> dict:
     }
 
 
-def get_style_for_context(context: str = "default") -> dict | None:
+def get_style_for_context(context: str = "default") -> Optional[dict]:
     """
     Get style profile for a specific context.
     
@@ -386,7 +387,7 @@ def get_style_for_context(context: str = "default") -> dict | None:
         return profile
 
 
-def get_style_profile() -> dict | None:
+def get_style_profile() -> Optional[dict]:
     """
     Load the user's style profile if it exists.
     
@@ -535,7 +536,7 @@ def should_refresh_styles() -> bool:
     return False
 
 
-def auto_refresh_styles_if_needed(silent: bool = True) -> dict | None:
+def auto_refresh_styles_if_needed(silent: bool = True) -> Optional[dict]:
     """
     Automatically refresh style profiles if they're stale or missing.
     Called on agent startup.

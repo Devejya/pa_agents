@@ -145,3 +145,4 @@ def get_email_by_id(email_id: str) -> dict:
         "is_unread": "UNREAD" in full_msg.get("labelIds", []),
     }
 
+

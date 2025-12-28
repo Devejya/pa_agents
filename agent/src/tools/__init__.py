@@ -31,6 +31,31 @@ from .memory_tools import (
     should_remember_this,
     auto_extract_and_save_facts,
 )
+from .user_network import (
+    # Read tools
+    get_contact_by_relationship,
+    get_contact_by_name,
+    get_interests_by_relationship,
+    get_interests_by_name,
+    find_related_person,
+    get_most_contacted_people,
+    search_contacts,
+    # Write tools
+    add_new_contact,
+    update_contact_info,
+    add_relationship,
+    add_interest_to_contact,
+    deactivate_contact,
+    # Tool collections
+    USER_NETWORK_TOOLS,
+    USER_NETWORK_READ_TOOLS,
+    USER_NETWORK_WRITE_TOOLS,
+)
+from .profile_discovery import (
+    analyze_emails_for_profile,
+    save_discovered_profile,
+    PROFILE_DISCOVERY_TOOLS,
+)
 
 __all__ = [
     "read_emails",
@@ -60,5 +85,27 @@ __all__ = [
     "forget_all_memories",
     "should_remember_this",
     "auto_extract_and_save_facts",
+    # User network read tools
+    "get_contact_by_relationship",
+    "get_contact_by_name",
+    "get_interests_by_relationship",
+    "get_interests_by_name",
+    "find_related_person",
+    "get_most_contacted_people",
+    "search_contacts",
+    # User network write tools
+    "add_new_contact",
+    "update_contact_info",
+    "add_relationship",
+    "add_interest_to_contact",
+    "deactivate_contact",
+    # Tool collections
+    "USER_NETWORK_TOOLS",
+    "USER_NETWORK_READ_TOOLS",
+    "USER_NETWORK_WRITE_TOOLS",
+    # Profile discovery tools
+    "analyze_emails_for_profile",
+    "save_discovered_profile",
+    "PROFILE_DISCOVERY_TOOLS",
 ]
 

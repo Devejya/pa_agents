@@ -1,0 +1,960 @@
+"""
+LangChain Tools for Google Workspace
+
+These tools wrap the Google Workspace functions for use with LangChain agents.
+"""
+
+from typing import Optional
+from langchain_core.tools import tool
+
+from ..tools import (
+    # Calendar
+    list_calendar_events as _list_calendar_events,
+    create_calendar_event as _create_calendar_event,
+    update_calendar_event as _update_calendar_event,
+    get_calendar_event as _get_calendar_event,
+    delete_calendar_event as _delete_calendar_event,
+    # Gmail
+    read_emails as _read_emails,
+    get_email_by_id as _get_email_by_id,
+    send_email as _send_email,
+    search_emails as _search_emails,
+    # Contacts
+    list_contacts as _list_contacts,
+    search_contacts as _search_contacts,
+    # Drive
+    list_drive_files as _list_drive_files,
+    search_drive_files as _search_drive_files,
+    get_file_content as _get_file_content,
+    create_drive_folder as _create_drive_folder,
+    rename_drive_file as _rename_drive_file,
+    move_drive_file as _move_drive_file,
+    delete_drive_file as _delete_drive_file,
+    copy_drive_file as _copy_drive_file,
+    # Sheets
+    create_spreadsheet as _create_spreadsheet,
+    add_sheet_to_spreadsheet as _add_sheet_to_spreadsheet,
+    list_spreadsheets as _list_spreadsheets,
+    read_spreadsheet as _read_spreadsheet,
+    write_to_spreadsheet as _write_to_spreadsheet,
+    # Docs
+    list_documents as _list_documents,
+    read_document as _read_document,
+    create_document as _create_document,
+    append_to_document as _append_to_document,
+    replace_text_in_document as _replace_text_in_document,
+    # Slides
+    list_presentations as _list_presentations,
+    read_presentation as _read_presentation,
+    create_presentation as _create_presentation,
+    add_slide as _add_slide,
+    add_text_to_slide as _add_text_to_slide,
+    delete_slide as _delete_slide,
+)
+
+
+# Global variable to hold the current user's email
+# This is set by the chat handler before invoking the agent
+_current_user_email: Optional[str] = None
+
+
+def set_current_user(email: str):
+    """Set the current user email for tool execution."""
+    global _current_user_email
+    _current_user_email = email
+
+
+def get_current_user() -> str:
+    """Get the current user email."""
+    if not _current_user_email:
+        raise ValueError("No user email set. Please authenticate first.")
+    return _current_user_email
+
+
+# ============== Utility Tools ==============
+
+@tool
+def get_current_datetime() -> str:
+    """
+    Get the current date and time. Use this FIRST when creating calendar events 
+    to know what dates are valid (today and future dates).
+    
+    Returns:
+        Current date, time, and example ISO format for calendar events.
+    """
+    from datetime import datetime, timedelta
+    
+    now = datetime.now()
+    tomorrow = now + timedelta(days=1)
+    next_week = now + timedelta(days=7)
+    
+    return f"""📅 **Current Date & Time:**
+- Today: {now.strftime('%A, %B %d, %Y')}
+- Current Time: {now.strftime('%I:%M %p')}
+
+**For calendar events, use these ISO date formats:**
+- Today at 2pm: `{now.strftime('%Y-%m-%d')}T14:00:00`
+- Tomorrow at 10am: `{tomorrow.strftime('%Y-%m-%d')}T10:00:00`
+- Next week same day: `{next_week.strftime('%Y-%m-%d')}T10:00:00`
+
+Always use {now.year} or {now.year + 1} for the year (never use past years like 2024)."""
+
+
+# ============== Calendar Tools ==============
+
+@tool
+def list_calendar_events(days_ahead: int = 7) -> str:
+    """
+    List upcoming calendar events.
+    
+    Args:
+        days_ahead: Number of days to look ahead (default: 7)
+        
+    Returns:
+        List of upcoming events with title, time, and location
+    """
+    events = _list_calendar_events(
+        user_email=get_current_user(),
+        max_results=10,
+        days_ahead=days_ahead,
+    )
+    if not events:
+        return "No upcoming events found."
+    
+    result = "Upcoming calendar events:\n"
+    for event in events:
+        result += f"\n- **{event['summary']}**\n"
+        result += f"  Time: {event['start']} to {event['end']}\n"
+        if event['location']:
+            result += f"  Location: {event['location']}\n"
+        if event['attendees']:
+            result += f"  Attendees: {', '.join(event['attendees'])}\n"
+    return result
+
+
+@tool
+def create_calendar_event(
+    summary: str,
+    start_time: str,
+    end_time: str,
+    description: str = "",
+    location: str = "",
+) -> str:
+    """
+    Create a new calendar event.
+    
+    Args:
+        summary: Event title
+        start_time: Start time in ISO format (YYYY-MM-DDTHH:MM:SS)
+        end_time: End time in ISO format (YYYY-MM-DDTHH:MM:SS)
+        description: Event description (optional)
+        location: Event location (optional)
+        
+    Returns:
+        Confirmation with event ID and link. Use the returned event_id for updates.
+    """
+    from datetime import datetime, timedelta
+    
+    now = datetime.now()
+    
+    # Validate dates are not in the past
+    try:
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00').replace('+00:00', ''))
+        if start_dt < now - timedelta(days=1):
+            return f"❌ Error: The date {start_time} appears to be in the past. Today is {now.strftime('%B %d, %Y')}. Please use a current or future date like {now.strftime('%Y-%m-%d')}T10:00:00"
+    except Exception as e:
+        pass
+    
+    result = _create_calendar_event(
+        user_email=get_current_user(),
+        summary=summary,
+        start_time=start_time,
+        end_time=end_time,
+        description=description,
+        location=location,
+    )
+    return f"✅ Event created: **{result['summary']}**\nEvent ID: `{result['id']}`\nLink: {result['html_link']}\n\nUse Event ID `{result['id']}` if you need to update this event."
+
+
+@tool
+def update_calendar_event(
+    event_id: str,
+    summary: str = "",
+    start_time: str = "",
+    end_time: str = "",
+    description: str = "",
+    location: str = "",
+) -> str:
+    """
+    Update an existing calendar event.
+    
+    IMPORTANT: You must use the exact event_id returned from create_calendar_event.
+    
+    Args:
+        event_id: The exact Event ID from create_calendar_event (e.g., "abc123xyz")
+        summary: New title (leave empty to keep current)
+        start_time: New start time in ISO format YYYY-MM-DDTHH:MM:SS (leave empty to keep current)
+        end_time: New end time in ISO format (leave empty to keep current)
+        description: New description (leave empty to keep current)
+        location: New location (leave empty to keep current)
+        
+    Returns:
+        Confirmation with updated event info
+    """
+    result = _update_calendar_event(
+        user_email=get_current_user(),
+        event_id=event_id,
+        summary=summary if summary else None,
+        start_time=start_time if start_time else None,
+        end_time=end_time if end_time else None,
+        description=description if description else None,
+        location=location if location else None,
+    )
+    return f"✅ Event updated: **{result['summary']}**\nLink: {result['html_link']}"
+
+
+@tool
+def delete_calendar_event(event_id: str) -> str:
+    """
+    Delete a calendar event by ID.
+    
+    Args:
+        event_id: The event ID to delete
+        
+    Returns:
+        Confirmation message
+    """
+    _delete_calendar_event(user_email=get_current_user(), event_id=event_id)
+    return f"✅ Event deleted successfully."
+
+
+# ============== Gmail Tools ==============
+
+@tool
+def read_recent_emails(max_results: int = 10, days_back: int = 7) -> str:
+    """
+    Read recent emails from inbox.
+    
+    Args:
+        max_results: Maximum number of emails to fetch (default: 10)
+        days_back: Only fetch emails from last N days (default: 7)
+        
+    Returns:
+        List of emails with subject, sender, and snippet
+    """
+    emails = _read_emails(
+        user_email=get_current_user(),
+        max_results=max_results,
+        days_back=days_back,
+    )
+    if not emails:
+        return "No emails found."
+    
+    result = f"Found {len(emails)} emails:\n"
+    for email in emails:
+        result += f"\n- **{email['subject']}**\n"
+        result += f"  From: {email['from']}\n"
+        result += f"  Date: {email['date']}\n"
+        result += f"  {email['snippet'][:100]}...\n"
+        result += f"  ID: {email['id']}\n"
+    return result
+
+
+@tool
+def search_emails(query: str, max_results: int = 10) -> str:
+    """
+    Search emails using Gmail search query.
+    
+    Args:
+        query: Gmail search query (e.g., "from:john subject:meeting")
+        max_results: Maximum results to return (default: 10)
+        
+    Returns:
+        List of matching emails
+    """
+    emails = _search_emails(
+        user_email=get_current_user(),
+        query=query,
+        max_results=max_results,
+    )
+    if not emails:
+        return f"No emails found matching: {query}"
+    
+    result = f"Found {len(emails)} emails matching '{query}':\n"
+    for email in emails:
+        result += f"\n- **{email['subject']}**\n"
+        result += f"  From: {email['from']}\n"
+        result += f"  Date: {email['date']}\n"
+        result += f"  ID: {email['id']}\n"
+    return result
+
+
+@tool
+def get_email_details(email_id: str) -> str:
+    """
+    Get full details of a specific email by ID.
+    
+    Args:
+        email_id: Gmail message ID
+        
+    Returns:
+        Full email content
+    """
+    email = _get_email_by_id(user_email=get_current_user(), email_id=email_id)
+    
+    result = f"**{email['subject']}**\n"
+    result += f"From: {email['from']}\n"
+    result += f"To: {email['to']}\n"
+    result += f"Date: {email['date']}\n\n"
+    result += f"{email['body']}"
+    return result
+
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """
+    Send an email.
+    
+    Args:
+        to: Recipient email address
+        subject: Email subject
+        body: Email body (plain text)
+        
+    Returns:
+        Confirmation message
+    """
+    result = _send_email(
+        user_email=get_current_user(),
+        to=to,
+        subject=subject,
+        body=body,
+    )
+    return f"✅ Email sent to {to}\nSubject: {subject}"
+
+
+# ============== Contacts Tools ==============
+
+@tool
+def list_my_contacts(max_results: int = 20) -> str:
+    """
+    List contacts from Google Contacts.
+    
+    Args:
+        max_results: Maximum number of contacts (default: 20)
+        
+    Returns:
+        List of contacts with name and email
+    """
+    contacts = _list_contacts(
+        user_email=get_current_user(),
+        max_results=max_results,
+    )
+    if not contacts:
+        return "No contacts found."
+    
+    result = f"Found {len(contacts)} contacts:\n"
+    for contact in contacts:
+        result += f"\n- **{contact['name']}**"
+        if contact['emails']:
+            result += f" - {contact['emails'][0]}"
+        if contact['organization']:
+            result += f" ({contact['organization']})"
+        result += "\n"
+    return result
+
+
+@tool
+def search_my_contacts(query: str) -> str:
+    """
+    Search contacts by name or email.
+    
+    Args:
+        query: Search query (name or email)
+        
+    Returns:
+        Matching contacts
+    """
+    contacts = _search_contacts(
+        user_email=get_current_user(),
+        query=query,
+    )
+    if not contacts:
+        return f"No contacts found matching: {query}"
+    
+    result = f"Contacts matching '{query}':\n"
+    for contact in contacts:
+        result += f"\n- **{contact['name']}**"
+        if contact['emails']:
+            result += f"\n  Email: {contact['emails'][0]}"
+        if contact['phones']:
+            result += f"\n  Phone: {contact['phones'][0]}"
+        result += "\n"
+    return result
+
+
+# ============== Drive Tools ==============
+
+@tool
+def list_drive_files(max_results: int = 20) -> str:
+    """
+    List recent files in Google Drive.
+    
+    Args:
+        max_results: Maximum number of files (default: 20)
+        
+    Returns:
+        List of files with name and type
+    """
+    files = _list_drive_files(
+        user_email=get_current_user(),
+        max_results=max_results,
+    )
+    if not files:
+        return "No files found in Drive."
+    
+    result = f"Recent files in Drive:\n"
+    for f in files:
+        result += f"\n- **{f['name']}**\n"
+        result += f"  Type: {f['mime_type']}\n"
+        result += f"  Modified: {f['modified_time']}\n"
+        result += f"  ID: {f['id']}\n"
+    return result
+
+
+@tool
+def search_drive(query: str) -> str:
+    """
+    Search files in Google Drive.
+    
+    Args:
+        query: Search query (file name)
+        
+    Returns:
+        Matching files
+    """
+    files = _search_drive_files(
+        user_email=get_current_user(),
+        query=query,
+    )
+    if not files:
+        return f"No files found matching: {query}"
+    
+    result = f"Files matching '{query}':\n"
+    for f in files:
+        result += f"\n- **{f['name']}**\n"
+        result += f"  Link: {f['web_link']}\n"
+    return result
+
+
+@tool
+def create_drive_folder(folder_name: str, parent_folder_id: str = "") -> str:
+    """
+    Create a new folder in Google Drive.
+    
+    Args:
+        folder_name: Name for the new folder
+        parent_folder_id: Parent folder ID (leave empty for root)
+        
+    Returns:
+        Created folder info with link
+    """
+    result = _create_drive_folder(
+        user_email=get_current_user(),
+        folder_name=folder_name,
+        parent_folder_id=parent_folder_id if parent_folder_id else None,
+    )
+    return f"✅ Folder created: **{result['name']}**\nID: {result['id']}\nLink: {result['web_link']}"
+
+
+@tool
+def rename_drive_file(file_id: str, new_name: str) -> str:
+    """
+    Rename a file or folder in Google Drive.
+    
+    Args:
+        file_id: File or folder ID to rename
+        new_name: New name
+        
+    Returns:
+        Updated file info
+    """
+    result = _rename_drive_file(
+        user_email=get_current_user(),
+        file_id=file_id,
+        new_name=new_name,
+    )
+    return f"✅ Renamed to: **{result['name']}**\nLink: {result['web_link']}"
+
+
+@tool
+def move_drive_file(file_id: str, new_parent_id: str) -> str:
+    """
+    Move a file to a different folder in Google Drive.
+    
+    Args:
+        file_id: File ID to move
+        new_parent_id: Destination folder ID
+        
+    Returns:
+        Confirmation
+    """
+    result = _move_drive_file(
+        user_email=get_current_user(),
+        file_id=file_id,
+        new_parent_id=new_parent_id,
+    )
+    return f"✅ Moved **{result['name']}** to new folder\nLink: {result['web_link']}"
+
+
+@tool
+def delete_drive_file(file_id: str, permanent: bool = False) -> str:
+    """
+    Delete a file from Google Drive.
+    
+    Args:
+        file_id: File ID to delete
+        permanent: If true, permanently delete. If false, move to trash.
+        
+    Returns:
+        Confirmation
+    """
+    result = _delete_drive_file(
+        user_email=get_current_user(),
+        file_id=file_id,
+        permanent=permanent,
+    )
+    action = "permanently deleted" if permanent else "moved to trash"
+    return f"✅ File {action}."
+
+
+@tool
+def copy_drive_file(file_id: str, new_name: str = "") -> str:
+    """
+    Copy a file in Google Drive.
+    
+    Args:
+        file_id: File ID to copy
+        new_name: Name for the copy (leave empty to auto-generate)
+        
+    Returns:
+        New file info
+    """
+    result = _copy_drive_file(
+        user_email=get_current_user(),
+        file_id=file_id,
+        new_name=new_name if new_name else None,
+    )
+    return f"✅ File copied: **{result['name']}**\nID: {result['id']}\nLink: {result['web_link']}"
+
+
+# ============== Sheets Tools ==============
+
+@tool
+def create_new_spreadsheet(title: str, sheet_names: str = "Sheet1") -> str:
+    """
+    Create a new Google Spreadsheet.
+    
+    Args:
+        title: Spreadsheet title
+        sheet_names: Comma-separated list of sheet names (default: "Sheet1")
+        
+    Returns:
+        Confirmation with link
+    """
+    # Parse sheet names from comma-separated string
+    sheets = [s.strip() for s in sheet_names.split(",") if s.strip()]
+    if not sheets:
+        sheets = ["Sheet1"]
+    
+    result = _create_spreadsheet(
+        user_email=get_current_user(),
+        title=title,
+        sheet_names=sheets,
+    )
+    sheets_list = ", ".join(result["sheets"])
+    return f"✅ Spreadsheet created: **{result['title']}**\nSheets: {sheets_list}\nLink: {result['web_link']}"
+
+
+@tool
+def add_sheet_to_spreadsheet(spreadsheet_id: str, sheet_name: str) -> str:
+    """
+    Add a new sheet tab to an existing spreadsheet.
+    
+    Args:
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name for the new sheet
+        
+    Returns:
+        Confirmation message
+    """
+    result = _add_sheet_to_spreadsheet(
+        user_email=get_current_user(),
+        spreadsheet_id=spreadsheet_id,
+        sheet_name=sheet_name,
+    )
+    return f"✅ Sheet '{result['sheet_name']}' added to spreadsheet.\nLink: {result['web_link']}"
+
+
+@tool
+def write_spreadsheet_data(spreadsheet_id: str, range_name: str, data: str) -> str:
+    """
+    Write data to a Google Spreadsheet.
+    
+    Args:
+        spreadsheet_id: The spreadsheet ID
+        range_name: Sheet and range to write (e.g., "Sheet1!A1")
+        data: Data to write as rows, separated by newlines; columns separated by pipes (|)
+              Example: "Name|Age|City\\nJohn|30|NYC\\nJane|25|LA"
+        
+    Returns:
+        Confirmation message
+    """
+    # Parse the data string into 2D list
+    rows = data.strip().split("\n")
+    values = [row.split("|") for row in rows]
+    
+    result = _write_to_spreadsheet(
+        user_email=get_current_user(),
+        spreadsheet_id=spreadsheet_id,
+        range_name=range_name,
+        values=values,
+    )
+    return f"✅ Data written to spreadsheet.\nUpdated {result['updated_cells']} cells in range {result['updated_range']}"
+
+
+@tool
+def list_spreadsheets() -> str:
+    """
+    List Google Sheets spreadsheets.
+    
+    Returns:
+        List of spreadsheets
+    """
+    sheets = _list_spreadsheets(user_email=get_current_user())
+    if not sheets:
+        return "No spreadsheets found."
+    
+    result = "Your spreadsheets:\n"
+    for s in sheets:
+        result += f"\n- **{s['name']}**\n"
+        result += f"  ID: {s['id']}\n"
+    return result
+
+
+@tool
+def read_spreadsheet_data(spreadsheet_id: str, range_name: str = "Sheet1") -> str:
+    """
+    Read data from a Google Sheets spreadsheet.
+    
+    Args:
+        spreadsheet_id: Spreadsheet ID
+        range_name: Sheet and range (e.g., "Sheet1!A1:D10")
+        
+    Returns:
+        Spreadsheet data as text
+    """
+    data = _read_spreadsheet(
+        user_email=get_current_user(),
+        spreadsheet_id=spreadsheet_id,
+        range_name=range_name,
+    )
+    
+    result = f"**{data['title']}** - {data['range']}\n\n"
+    for row in data['values'][:20]:  # Limit rows
+        result += " | ".join(str(cell) for cell in row) + "\n"
+    
+    if data['row_count'] > 20:
+        result += f"\n... ({data['row_count'] - 20} more rows)"
+    return result
+
+
+# ============== Docs Tools ==============
+
+@tool
+def list_google_docs() -> str:
+    """
+    List Google Docs documents.
+    
+    Returns:
+        List of documents
+    """
+    docs = _list_documents(user_email=get_current_user())
+    if not docs:
+        return "No documents found."
+    
+    result = "Your documents:\n"
+    for d in docs:
+        result += f"\n- **{d['name']}**\n"
+        result += f"  ID: {d['id']}\n"
+    return result
+
+
+@tool
+def read_google_doc(document_id: str) -> str:
+    """
+    Read content from a Google Doc.
+    
+    Args:
+        document_id: Document ID
+        
+    Returns:
+        Document content
+    """
+    doc = _read_document(
+        user_email=get_current_user(),
+        document_id=document_id,
+    )
+    return f"**{doc['title']}**\n\n{doc['content']}"
+
+
+@tool
+def create_google_doc(title: str, content: str = "") -> str:
+    """
+    Create a new Google Doc.
+    
+    Args:
+        title: Document title
+        content: Initial content (optional)
+        
+    Returns:
+        Confirmation with link
+    """
+    doc = _create_document(
+        user_email=get_current_user(),
+        title=title,
+        content=content,
+    )
+    return f"✅ Document created: **{doc['title']}**\nLink: {doc['web_link']}"
+
+
+@tool
+def append_to_google_doc(document_id: str, text: str) -> str:
+    """
+    Append text to the end of a Google Doc.
+    
+    Args:
+        document_id: Document ID
+        text: Text to append at the end
+        
+    Returns:
+        Confirmation
+    """
+    result = _append_to_document(
+        user_email=get_current_user(),
+        document_id=document_id,
+        text=text,
+    )
+    return f"✅ Text appended to **{result['title']}**\nLink: {result['web_link']}"
+
+
+@tool
+def find_replace_in_doc(document_id: str, find_text: str, replace_text: str) -> str:
+    """
+    Find and replace text in a Google Doc.
+    
+    Args:
+        document_id: Document ID
+        find_text: Text to find
+        replace_text: Text to replace with
+        
+    Returns:
+        Number of replacements made
+    """
+    result = _replace_text_in_document(
+        user_email=get_current_user(),
+        document_id=document_id,
+        find_text=find_text,
+        replace_text=replace_text,
+    )
+    return f"✅ Replaced {result['replacements_made']} occurrence(s) of '{find_text}' with '{replace_text}'\nLink: {result['web_link']}"
+
+
+# ============== Slides Tools ==============
+
+@tool
+def list_presentations() -> str:
+    """
+    List Google Slides presentations.
+    
+    Returns:
+        List of presentations
+    """
+    slides = _list_presentations(user_email=get_current_user())
+    if not slides:
+        return "No presentations found."
+    
+    result = "Your presentations:\n"
+    for s in slides:
+        result += f"\n- **{s['name']}**\n"
+        result += f"  ID: {s['id']}\n"
+    return result
+
+
+@tool
+def read_presentation_content(presentation_id: str) -> str:
+    """
+    Read content from a Google Slides presentation.
+    
+    Args:
+        presentation_id: Presentation ID
+        
+    Returns:
+        Presentation content (slide by slide)
+    """
+    pres = _read_presentation(
+        user_email=get_current_user(),
+        presentation_id=presentation_id,
+    )
+    
+    result = f"**{pres['title']}** ({pres['slide_count']} slides)\n"
+    for slide in pres['slides']:
+        result += f"\n--- Slide {slide['slide_number']} ---\n"
+        result += slide['content'] + "\n"
+    return result
+
+
+@tool
+def create_slides_presentation(title: str) -> str:
+    """
+    Create a new Google Slides presentation.
+    
+    Args:
+        title: Presentation title
+        
+    Returns:
+        Created presentation info with presentation_id and link. Use the presentation_id for adding slides.
+    """
+    pres = _create_presentation(
+        user_email=get_current_user(),
+        title=title,
+    )
+    return f"✅ Presentation created: **{pres['title']}**\n\nPresentation ID: `{pres['presentation_id']}`\nLink: {pres['web_link']}\n\nIMPORTANT: Use Presentation ID `{pres['presentation_id']}` to add slides to this presentation."
+
+
+@tool
+def add_slide_to_presentation(
+    presentation_id: str,
+    layout: str = "BLANK",
+) -> str:
+    """
+    Add a new slide to a presentation.
+    
+    Args:
+        presentation_id: Presentation ID
+        layout: Slide layout (BLANK, TITLE, TITLE_AND_BODY, SECTION_HEADER, etc.)
+        
+    Returns:
+        New slide info
+    """
+    result = _add_slide(
+        user_email=get_current_user(),
+        presentation_id=presentation_id,
+        layout=layout,
+    )
+    return f"✅ Slide added to presentation\nSlide ID: {result['slide_id']}\nLayout: {result['layout']}\nLink: {result['web_link']}"
+
+
+@tool
+def add_text_to_presentation_slide(
+    presentation_id: str,
+    slide_id: str,
+    text: str,
+    x: float = 100,
+    y: float = 100,
+    width: float = 400,
+    height: float = 100,
+) -> str:
+    """
+    Add a text box to a slide.
+    
+    Args:
+        presentation_id: Presentation ID
+        slide_id: Slide object ID (get from add_slide_to_presentation or read_presentation_content)
+        text: Text content to add
+        x: X position in points (default: 100)
+        y: Y position in points (default: 100)
+        width: Text box width in points (default: 400)
+        height: Text box height in points (default: 100)
+        
+    Returns:
+        Confirmation
+    """
+    result = _add_text_to_slide(
+        user_email=get_current_user(),
+        presentation_id=presentation_id,
+        slide_id=slide_id,
+        text=text,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+    )
+    return f"✅ Text added to slide\nElement ID: {result['element_id']}\nLink: {result['web_link']}"
+
+
+@tool
+def delete_presentation_slide(presentation_id: str, slide_id: str) -> str:
+    """
+    Delete a slide from a presentation.
+    
+    Args:
+        presentation_id: Presentation ID
+        slide_id: Slide object ID to delete
+        
+    Returns:
+        Confirmation
+    """
+    _delete_slide(
+        user_email=get_current_user(),
+        presentation_id=presentation_id,
+        slide_id=slide_id,
+    )
+    return f"✅ Slide deleted from presentation"
+
+
+# Export all tools
+WORKSPACE_TOOLS = [
+    # Utility
+    get_current_datetime,
+    # Calendar
+    list_calendar_events,
+    create_calendar_event,
+    update_calendar_event,
+    delete_calendar_event,
+    # Gmail
+    read_recent_emails,
+    search_emails,
+    get_email_details,
+    send_email,
+    # Contacts
+    list_my_contacts,
+    search_my_contacts,
+    # Drive
+    list_drive_files,
+    search_drive,
+    create_drive_folder,
+    rename_drive_file,
+    move_drive_file,
+    delete_drive_file,
+    copy_drive_file,
+    # Sheets
+    create_new_spreadsheet,
+    add_sheet_to_spreadsheet,
+    write_spreadsheet_data,
+    list_spreadsheets,
+    read_spreadsheet_data,
+    # Docs
+    list_google_docs,
+    read_google_doc,
+    create_google_doc,
+    append_to_google_doc,
+    find_replace_in_doc,
+    # Slides
+    list_presentations,
+    read_presentation_content,
+    create_slides_presentation,
+    add_slide_to_presentation,
+    add_text_to_presentation_slide,
+    delete_presentation_slide,
+]
+

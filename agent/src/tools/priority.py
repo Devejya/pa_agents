@@ -120,3 +120,4 @@ Return ONLY valid JSON."""),
         "total_analyzed": len(emails),
     }
 
+

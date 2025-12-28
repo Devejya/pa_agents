@@ -8,6 +8,7 @@ Key is auto-generated on first run and stored locally.
 import os
 import json
 from pathlib import Path
+from typing import Optional
 from cryptography.fernet import Fernet
 
 
@@ -102,7 +103,7 @@ def save_style_profile(profile: dict) -> Path:
     return PROFILE_PATH
 
 
-def load_style_profile() -> dict | None:
+def load_style_profile() -> Optional[dict]:
     """
     Load and decrypt style profile from disk.
     
@@ -157,4 +158,5 @@ def get_profile_info() -> dict:
         info["profile_modified"] = stat.st_mtime
     
     return info
+
 

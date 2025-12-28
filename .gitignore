@@ -50,3 +50,4 @@ temp/
 *.tmp
 token*.json
 *.pyc
+services/yennifer_api/tokens/
