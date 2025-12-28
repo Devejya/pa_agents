@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from .workspace_tools import WORKSPACE_TOOLS, set_current_user
+from .config import get_settings
 
 
 SYSTEM_PROMPT = """You are Yennifer, an AI executive assistant. You help users manage their:
@@ -63,8 +64,13 @@ class YenniferAssistant:
         self.user_email = user_email
         self.chat_history = []
         
-        # Initialize LLM
-        self._llm = ChatOpenAI(model=model, temperature=0.7)
+        # Initialize LLM with API key from settings
+        settings = get_settings()
+        self._llm = ChatOpenAI(
+            model=model, 
+            temperature=0.7,
+            api_key=settings.openai_api_key,
+        )
         
         # Create agent with workspace tools
         self._agent = create_react_agent(
