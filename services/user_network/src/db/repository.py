@@ -12,16 +12,31 @@ import asyncpg
 
 from .models import (
     ConnectionCounts,
+    ConflictStatus,
+    ExternalIdSyncStatus,
     Interest,
     InterestCreate,
     Person,
     PersonCreate,
+    PersonExternalId,
+    PersonExternalIdCreate,
     PersonStatus,
     PersonUpdate,
     Relationship,
     RelationshipCategory,
     RelationshipCreate,
     RelationshipUpdate,
+    ResolutionType,
+    SyncConflict,
+    SyncConflictCreate,
+    SyncLog,
+    SyncLogCreate,
+    SyncLogUpdate,
+    SyncProvider,
+    SyncState,
+    SyncStateCreate,
+    SyncStateUpdate,
+    SyncStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,19 +69,21 @@ class PersonRepository:
         
         query = """
             INSERT INTO persons (
-                id, name, aliases, is_core_user, status,
+                id, first_name, last_name, middle_names, name,
+                aliases, is_core_user, status,
                 work_email, personal_email, work_cell, personal_cell, secondary_cell,
                 company, latest_title, expertise,
                 address, country, city, state,
                 instagram_handle, religion, ethnicity, country_of_birth, city_of_birth,
-                interests, created_at, updated_at
+                date_of_birth, interests, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10,
-                $11, $12, $13,
-                $14, $15, $16, $17,
-                $18, $19, $20, $21, $22,
-                $23, $24, $25
+                $6, $7, $8,
+                $9, $10, $11, $12, $13,
+                $14, $15, $16,
+                $17, $18, $19, $20,
+                $21, $22, $23, $24, $25,
+                $26, $27, $28, $29
             )
             RETURNING *
         """
@@ -75,6 +92,9 @@ class PersonRepository:
             row = await conn.fetchrow(
                 query,
                 person_id,
+                data.first_name,
+                data.last_name,
+                data.middle_names,
                 data.name,
                 data.aliases,
                 data.is_core_user,
@@ -96,6 +116,7 @@ class PersonRepository:
                 data.ethnicity,
                 data.country_of_birth,
                 data.city_of_birth,
+                data.date_of_birth,
                 json.dumps([i.model_dump(mode="json") for i in interests]),
                 now,
                 now,
@@ -284,8 +305,17 @@ class PersonRepository:
         
         interests = [Interest(**i) for i in interests_data] if interests_data else []
         
+        # Handle backward compatibility: if first_name is None, derive from name
+        first_name = row.get("first_name")
+        if not first_name and row.get("name"):
+            name_parts = row["name"].split()
+            first_name = name_parts[0] if name_parts else ""
+        
         return Person(
             id=row["id"],
+            first_name=first_name or "",
+            last_name=row.get("last_name"),
+            middle_names=row.get("middle_names"),
             name=row["name"],
             aliases=row["aliases"] or [],
             is_core_user=row["is_core_user"],
@@ -307,6 +337,7 @@ class PersonRepository:
             ethnicity=row["ethnicity"],
             country_of_birth=row["country_of_birth"],
             city_of_birth=row["city_of_birth"],
+            date_of_birth=row.get("date_of_birth"),
             interests=interests,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -459,5 +490,595 @@ class RelationshipRepository:
             ended_at=row["ended_at"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+        )
+
+
+# ============================================================================
+# Person External ID Repository
+# ============================================================================
+
+class PersonExternalIdRepository:
+    """Repository for person external ID operations (for multi-platform sync)."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def create(self, data: PersonExternalIdCreate) -> PersonExternalId:
+        """Create a new external ID mapping."""
+        ext_id = uuid4()
+        now = datetime.utcnow()
+        
+        query = """
+            INSERT INTO person_external_ids (
+                id, person_id, provider, external_id, external_metadata,
+                last_synced_at, sync_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                ext_id,
+                data.person_id,
+                data.provider.value,
+                data.external_id,
+                json.dumps(data.external_metadata),
+                now,
+                ExternalIdSyncStatus.SYNCED.value,
+                now,
+                now,
+            )
+            return self._row_to_external_id(row)
+
+    async def get_by_external_id(
+        self, provider: str, external_id: str
+    ) -> Optional[PersonExternalId]:
+        """Find by provider and external ID."""
+        query = """
+            SELECT * FROM person_external_ids 
+            WHERE provider = $1 AND external_id = $2
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, provider, external_id)
+            return self._row_to_external_id(row) if row else None
+
+    async def get_by_person_id(
+        self, person_id: UUID, provider: Optional[str] = None
+    ) -> list[PersonExternalId]:
+        """Get all external IDs for a person."""
+        if provider:
+            query = """
+                SELECT * FROM person_external_ids 
+                WHERE person_id = $1 AND provider = $2
+            """
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, person_id, provider)
+        else:
+            query = "SELECT * FROM person_external_ids WHERE person_id = $1"
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, person_id)
+        return [self._row_to_external_id(row) for row in rows]
+
+    async def update_sync_status(
+        self, id: UUID, status: ExternalIdSyncStatus, metadata: Optional[dict] = None
+    ) -> Optional[PersonExternalId]:
+        """Update sync status and optionally metadata."""
+        now = datetime.utcnow()
+        
+        if metadata:
+            query = """
+                UPDATE person_external_ids 
+                SET sync_status = $2, external_metadata = $3, 
+                    last_synced_at = $4, updated_at = $4
+                WHERE id = $1
+                RETURNING *
+            """
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, id, status.value, json.dumps(metadata), now)
+        else:
+            query = """
+                UPDATE person_external_ids 
+                SET sync_status = $2, last_synced_at = $3, updated_at = $3
+                WHERE id = $1
+                RETURNING *
+            """
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, id, status.value, now)
+        
+        return self._row_to_external_id(row) if row else None
+
+    async def upsert(
+        self, person_id: UUID, provider: str, external_id: str, metadata: dict = None
+    ) -> PersonExternalId:
+        """Insert or update an external ID mapping."""
+        now = datetime.utcnow()
+        new_id = uuid4()
+        
+        query = """
+            INSERT INTO person_external_ids (
+                id, person_id, provider, external_id, external_metadata,
+                last_synced_at, sync_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (provider, external_id) 
+            DO UPDATE SET 
+                person_id = EXCLUDED.person_id,
+                external_metadata = EXCLUDED.external_metadata,
+                last_synced_at = EXCLUDED.last_synced_at,
+                sync_status = $7,
+                updated_at = EXCLUDED.updated_at
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                new_id,
+                person_id,
+                provider,
+                external_id,
+                json.dumps(metadata or {}),
+                now,
+                ExternalIdSyncStatus.SYNCED.value,
+                now,
+                now,
+            )
+            return self._row_to_external_id(row)
+
+    async def delete(self, id: UUID) -> bool:
+        """Delete an external ID mapping."""
+        query = "DELETE FROM person_external_ids WHERE id = $1 RETURNING id"
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, id)
+            return row is not None
+
+    def _row_to_external_id(self, row: asyncpg.Record) -> PersonExternalId:
+        """Convert database row to PersonExternalId model."""
+        metadata = row["external_metadata"]
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        
+        return PersonExternalId(
+            id=row["id"],
+            person_id=row["person_id"],
+            provider=SyncProvider(row["provider"]),
+            external_id=row["external_id"],
+            external_metadata=metadata or {},
+            last_synced_at=row["last_synced_at"],
+            sync_status=ExternalIdSyncStatus(row["sync_status"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+
+# ============================================================================
+# Sync State Repository
+# ============================================================================
+
+class SyncStateRepository:
+    """Repository for sync state operations."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def get_or_create(self, user_id: str, provider: str) -> SyncState:
+        """Get sync state for user/provider, creating if needed."""
+        state = await self.get(user_id, provider)
+        if state:
+            return state
+        return await self.create(SyncStateCreate(user_id=user_id, provider=provider))
+
+    async def create(self, data: SyncStateCreate) -> SyncState:
+        """Create a new sync state."""
+        state_id = uuid4()
+        now = datetime.utcnow()
+        
+        query = """
+            INSERT INTO sync_state (
+                id, user_id, provider, sync_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                state_id,
+                data.user_id,
+                data.provider,
+                SyncStatus.IDLE.value,
+                now,
+                now,
+            )
+            return self._row_to_sync_state(row)
+
+    async def get(self, user_id: str, provider: str) -> Optional[SyncState]:
+        """Get sync state for a user and provider."""
+        query = "SELECT * FROM sync_state WHERE user_id = $1 AND provider = $2"
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, user_id, provider)
+            return self._row_to_sync_state(row) if row else None
+
+    async def get_all_for_user(self, user_id: str) -> list[SyncState]:
+        """Get all sync states for a user."""
+        query = "SELECT * FROM sync_state WHERE user_id = $1"
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, user_id)
+            return [self._row_to_sync_state(row) for row in rows]
+
+    async def get_pending_syncs(self, limit: int = 100) -> list[SyncState]:
+        """Get sync states that are due for sync."""
+        query = """
+            SELECT * FROM sync_state 
+            WHERE sync_status = 'idle' 
+            AND (next_sync_at IS NULL OR next_sync_at <= NOW())
+            ORDER BY next_sync_at ASC NULLS FIRST
+            LIMIT $1
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, limit)
+            return [self._row_to_sync_state(row) for row in rows]
+
+    async def update(self, user_id: str, provider: str, data: SyncStateUpdate) -> Optional[SyncState]:
+        """Update sync state."""
+        updates = []
+        values = [user_id, provider]
+        param_count = 2
+        
+        update_data = data.model_dump(exclude_unset=True)
+        
+        for field, value in update_data.items():
+            param_count += 1
+            if field == "sync_status" and value is not None:
+                updates.append(f"{field} = ${param_count}")
+                values.append(value.value if hasattr(value, "value") else value)
+            else:
+                updates.append(f"{field} = ${param_count}")
+                values.append(value)
+        
+        if not updates:
+            return await self.get(user_id, provider)
+        
+        query = f"""
+            UPDATE sync_state 
+            SET {", ".join(updates)}, updated_at = NOW()
+            WHERE user_id = $1 AND provider = $2
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(query, *values)
+            return self._row_to_sync_state(row) if row else None
+
+    async def start_sync(self, user_id: str, provider: str) -> Optional[SyncState]:
+        """Mark sync as started."""
+        return await self.update(
+            user_id, provider,
+            SyncStateUpdate(sync_status=SyncStatus.SYNCING)
+        )
+
+    async def complete_sync(
+        self, 
+        user_id: str, 
+        provider: str,
+        sync_token: Optional[str] = None,
+        added: int = 0,
+        updated: int = 0,
+        is_full_sync: bool = False,
+        next_sync_minutes: int = 30,
+    ) -> Optional[SyncState]:
+        """Mark sync as completed with statistics."""
+        now = datetime.utcnow()
+        from datetime import timedelta
+        
+        update_data = SyncStateUpdate(
+            sync_status=SyncStatus.IDLE,
+            sync_token=sync_token,
+            last_sync_added=added,
+            last_sync_updated=updated,
+            consecutive_failures=0,
+            error_message=None,
+            next_sync_at=now + timedelta(minutes=next_sync_minutes),
+        )
+        
+        if is_full_sync:
+            update_data.last_full_sync_at = now
+        else:
+            update_data.last_incremental_sync_at = now
+        
+        return await self.update(user_id, provider, update_data)
+
+    async def fail_sync(
+        self, user_id: str, provider: str, error_message: str
+    ) -> Optional[SyncState]:
+        """Mark sync as failed."""
+        # Get current state to increment failure count
+        state = await self.get(user_id, provider)
+        failures = (state.consecutive_failures if state else 0) + 1
+        
+        # Exponential backoff: 5min, 10min, 20min, 40min, etc. (max 24 hours)
+        from datetime import timedelta
+        backoff_minutes = min(5 * (2 ** failures), 24 * 60)
+        
+        return await self.update(
+            user_id, provider,
+            SyncStateUpdate(
+                sync_status=SyncStatus.FAILED if failures >= 5 else SyncStatus.IDLE,
+                error_message=error_message,
+                consecutive_failures=failures,
+                next_sync_at=datetime.utcnow() + timedelta(minutes=backoff_minutes),
+            )
+        )
+
+    def _row_to_sync_state(self, row: asyncpg.Record) -> SyncState:
+        """Convert database row to SyncState model."""
+        return SyncState(
+            id=row["id"],
+            user_id=row["user_id"],
+            provider=row["provider"],
+            sync_token=row["sync_token"],
+            last_full_sync_at=row["last_full_sync_at"],
+            last_incremental_sync_at=row["last_incremental_sync_at"],
+            next_sync_at=row["next_sync_at"],
+            sync_status=SyncStatus(row["sync_status"]),
+            error_message=row["error_message"],
+            consecutive_failures=row["consecutive_failures"],
+            total_synced_count=row["total_synced_count"],
+            last_sync_added=row["last_sync_added"],
+            last_sync_updated=row["last_sync_updated"],
+            last_sync_deleted=row["last_sync_deleted"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+
+# ============================================================================
+# Sync Conflict Repository
+# ============================================================================
+
+class SyncConflictRepository:
+    """Repository for sync conflict operations."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def create(self, data: SyncConflictCreate) -> SyncConflict:
+        """Create a new sync conflict."""
+        conflict_id = uuid4()
+        now = datetime.utcnow()
+        
+        query = """
+            INSERT INTO sync_conflicts (
+                id, user_id, person_id, provider, external_id,
+                conflict_type, local_data, remote_data, suggested_resolution,
+                status, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                conflict_id,
+                data.user_id,
+                data.person_id,
+                data.provider.value,
+                data.external_id,
+                data.conflict_type.value,
+                json.dumps(data.local_data),
+                json.dumps(data.remote_data),
+                json.dumps(data.suggested_resolution) if data.suggested_resolution else None,
+                ConflictStatus.PENDING.value,
+                now,
+                now,
+            )
+            return self._row_to_conflict(row)
+
+    async def get_pending_for_user(self, user_id: str) -> list[SyncConflict]:
+        """Get all pending conflicts for a user."""
+        query = """
+            SELECT * FROM sync_conflicts 
+            WHERE user_id = $1 AND status = 'pending'
+            ORDER BY created_at DESC
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, user_id)
+            return [self._row_to_conflict(row) for row in rows]
+
+    async def resolve(
+        self, 
+        conflict_id: UUID, 
+        resolution_type: ResolutionType,
+        resolved_by: str
+    ) -> Optional[SyncConflict]:
+        """Resolve a conflict."""
+        query = """
+            UPDATE sync_conflicts 
+            SET status = $2, resolution_type = $3, resolved_at = NOW(), 
+                resolved_by = $4, updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query, 
+                conflict_id, 
+                ConflictStatus.RESOLVED.value,
+                resolution_type.value,
+                resolved_by
+            )
+            return self._row_to_conflict(row) if row else None
+
+    async def dismiss(self, conflict_id: UUID, dismissed_by: str) -> Optional[SyncConflict]:
+        """Dismiss a conflict without resolution."""
+        query = """
+            UPDATE sync_conflicts 
+            SET status = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
+            WHERE id = $1
+            RETURNING *
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query, conflict_id, ConflictStatus.DISMISSED.value, dismissed_by
+            )
+            return self._row_to_conflict(row) if row else None
+
+    def _row_to_conflict(self, row: asyncpg.Record) -> SyncConflict:
+        """Convert database row to SyncConflict model."""
+        local_data = row["local_data"]
+        remote_data = row["remote_data"]
+        suggested = row["suggested_resolution"]
+        
+        if isinstance(local_data, str):
+            local_data = json.loads(local_data)
+        if isinstance(remote_data, str):
+            remote_data = json.loads(remote_data)
+        if isinstance(suggested, str):
+            suggested = json.loads(suggested)
+        
+        return SyncConflict(
+            id=row["id"],
+            user_id=row["user_id"],
+            person_id=row["person_id"],
+            provider=SyncProvider(row["provider"]),
+            external_id=row["external_id"],
+            conflict_type=row["conflict_type"],
+            local_data=local_data or {},
+            remote_data=remote_data or {},
+            suggested_resolution=suggested,
+            status=ConflictStatus(row["status"]),
+            resolution_type=ResolutionType(row["resolution_type"]) if row["resolution_type"] else None,
+            resolved_at=row["resolved_at"],
+            resolved_by=row["resolved_by"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+
+# ============================================================================
+# Sync Log Repository
+# ============================================================================
+
+class SyncLogRepository:
+    """Repository for sync log operations."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def create(self, data: SyncLogCreate) -> SyncLog:
+        """Create a new sync log entry."""
+        log_id = uuid4()
+        now = datetime.utcnow()
+        
+        query = """
+            INSERT INTO sync_log (
+                id, user_id, provider, sync_type, direction,
+                status, started_at, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *
+        """
+        
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                query,
+                log_id,
+                data.user_id,
+                data.provider,
+                data.sync_type,
+                data.direction,
+                "running",
+                data.started_at,
+                now,
+            )
+            return self._row_to_log(row)
+
+    async def complete(
+        self, 
+        log_id: UUID, 
+        status: str,
+        processed: int = 0,
+        added: int = 0,
+        updated: int = 0,
+        failed: int = 0,
+        conflicts: int = 0,
+        error_message: Optional[str] = None,
+        error_details: Optional[dict] = None,
+    ) -> Optional[SyncLog]:
+        """Complete a sync log entry."""
+        now = datetime.utcnow()
+        
+        # Get start time to calculate duration
+        get_query = "SELECT started_at FROM sync_log WHERE id = $1"
+        async with self.pool.acquire() as conn:
+            start_row = await conn.fetchrow(get_query, log_id)
+            if not start_row:
+                return None
+            
+            duration_ms = int((now - start_row["started_at"]).total_seconds() * 1000)
+            
+            query = """
+                UPDATE sync_log 
+                SET status = $2, records_processed = $3, records_added = $4,
+                    records_updated = $5, records_failed = $6, conflicts_created = $7,
+                    completed_at = $8, duration_ms = $9, 
+                    error_message = $10, error_details = $11
+                WHERE id = $1
+                RETURNING *
+            """
+            
+            row = await conn.fetchrow(
+                query,
+                log_id,
+                status,
+                processed,
+                added,
+                updated,
+                failed,
+                conflicts,
+                now,
+                duration_ms,
+                error_message,
+                json.dumps(error_details) if error_details else None,
+            )
+            return self._row_to_log(row) if row else None
+
+    async def get_recent_for_user(
+        self, user_id: str, limit: int = 20
+    ) -> list[SyncLog]:
+        """Get recent sync logs for a user."""
+        query = """
+            SELECT * FROM sync_log 
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, user_id, limit)
+            return [self._row_to_log(row) for row in rows]
+
+    def _row_to_log(self, row: asyncpg.Record) -> SyncLog:
+        """Convert database row to SyncLog model."""
+        error_details = row["error_details"]
+        if isinstance(error_details, str):
+            error_details = json.loads(error_details)
+        
+        return SyncLog(
+            id=row["id"],
+            user_id=row["user_id"],
+            provider=row["provider"],
+            sync_type=row["sync_type"],
+            direction=row["direction"],
+            status=row["status"],
+            records_processed=row["records_processed"],
+            records_added=row["records_added"],
+            records_updated=row["records_updated"],
+            records_failed=row["records_failed"],
+            conflicts_created=row["conflicts_created"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            duration_ms=row["duration_ms"],
+            error_message=row["error_message"],
+            error_details=error_details,
+            created_at=row["created_at"],
         )
 

@@ -123,7 +123,12 @@ class ConnectionCounts(BaseModel):
 
 class PersonBase(BaseModel):
     """Base person fields."""
-    name: str = Field(..., min_length=1, max_length=200)
+    # Name fields (split for better sync support)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
+    middle_names: Optional[str] = Field(None, max_length=255)
+    name: Optional[str] = Field(None, max_length=200)  # Computed/legacy field
+    
     aliases: list[str] = Field(default_factory=list)
     is_core_user: bool = False
     status: PersonStatus = PersonStatus.ACTIVE
@@ -154,6 +159,7 @@ class PersonBase(BaseModel):
     ethnicity: Optional[str] = Field(None, max_length=100)
     country_of_birth: Optional[str] = Field(None, max_length=100)
     city_of_birth: Optional[str] = Field(None, max_length=100)
+    date_of_birth: Optional[date] = None
 
     @field_validator("aliases")
     @classmethod
@@ -164,6 +170,18 @@ class PersonBase(BaseModel):
     @classmethod
     def lowercase_email(cls, v: Optional[str]) -> Optional[str]:
         return v.lower().strip() if v else None
+
+    @model_validator(mode="after")
+    def compute_full_name(self):
+        """Compute the full name from name parts if not provided."""
+        if not self.name:
+            parts = [self.first_name]
+            if self.middle_names:
+                parts.append(self.middle_names)
+            if self.last_name:
+                parts.append(self.last_name)
+            self.name = " ".join(parts)
+        return self
 
 
 class PersonCreate(PersonBase):
@@ -196,7 +214,10 @@ class PersonCreate(PersonBase):
 
 class PersonUpdate(BaseModel):
     """Schema for updating a person (all fields optional)."""
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
+    middle_names: Optional[str] = Field(None, max_length=255)
+    name: Optional[str] = Field(None, min_length=1, max_length=200)  # Legacy/computed
     aliases: Optional[list[str]] = None
     status: Optional[PersonStatus] = None
     work_email: Optional[str] = Field(None, max_length=254)
@@ -216,6 +237,7 @@ class PersonUpdate(BaseModel):
     ethnicity: Optional[str] = Field(None, max_length=100)
     country_of_birth: Optional[str] = Field(None, max_length=100)
     city_of_birth: Optional[str] = Field(None, max_length=100)
+    date_of_birth: Optional[date] = None
     interests: Optional[list[InterestCreate]] = None
 
 
@@ -323,4 +345,222 @@ class MostContactedPerson(BaseModel):
     texts_this_week: int = 0
     calls_this_week: int = 0
     meets_this_week: int = 0
+
+
+# ============================================================================
+# Sync Models (for contact synchronization)
+# ============================================================================
+
+class SyncProvider(str, Enum):
+    """Supported sync providers."""
+    GOOGLE = "google"
+    APPLE = "apple"
+    MICROSOFT = "microsoft"
+    LINKEDIN = "linkedin"
+    MANUAL = "manual"
+
+
+class SyncStatus(str, Enum):
+    """Sync status values."""
+    IDLE = "idle"
+    SYNCING = "syncing"
+    FAILED = "failed"
+    PAUSED = "paused"
+
+
+class ExternalIdSyncStatus(str, Enum):
+    """Sync status for individual external IDs."""
+    SYNCED = "synced"
+    PENDING_PUSH = "pending_push"  # Local changes need to be pushed
+    PENDING_PULL = "pending_pull"  # Remote changes need to be pulled
+    CONFLICT = "conflict"  # Manual resolution needed
+
+
+class ConflictType(str, Enum):
+    """Types of sync conflicts."""
+    DUPLICATE_MATCH = "duplicate_match"  # Multiple matches found
+    FIELD_CONFLICT = "field_conflict"    # Same field has different values
+    MERGE_REQUIRED = "merge_required"    # Records need manual merge
+
+
+class ConflictStatus(str, Enum):
+    """Status of sync conflicts."""
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+
+class ResolutionType(str, Enum):
+    """How a conflict was resolved."""
+    KEEP_LOCAL = "keep_local"
+    KEEP_REMOTE = "keep_remote"
+    MERGE = "merge"
+    CREATE_NEW = "create_new"
+
+
+# ============================================================================
+# Person External ID Models
+# ============================================================================
+
+class PersonExternalIdBase(BaseModel):
+    """Base model for external IDs."""
+    provider: SyncProvider
+    external_id: str = Field(..., max_length=500)
+    external_metadata: dict = Field(default_factory=dict)
+
+
+class PersonExternalIdCreate(PersonExternalIdBase):
+    """Schema for creating an external ID."""
+    person_id: UUID
+
+
+class PersonExternalId(PersonExternalIdBase):
+    """Full external ID model."""
+    id: UUID
+    person_id: UUID
+    last_synced_at: Optional[datetime] = None
+    sync_status: ExternalIdSyncStatus = ExternalIdSyncStatus.SYNCED
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Sync State Models
+# ============================================================================
+
+class SyncStateBase(BaseModel):
+    """Base sync state fields."""
+    user_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)  # e.g., 'google_contacts'
+
+
+class SyncStateCreate(SyncStateBase):
+    """Schema for creating sync state."""
+    pass
+
+
+class SyncStateUpdate(BaseModel):
+    """Schema for updating sync state."""
+    sync_token: Optional[str] = None
+    sync_status: Optional[SyncStatus] = None
+    error_message: Optional[str] = None
+    consecutive_failures: Optional[int] = None
+    last_full_sync_at: Optional[datetime] = None
+    last_incremental_sync_at: Optional[datetime] = None
+    next_sync_at: Optional[datetime] = None
+    total_synced_count: Optional[int] = None
+    last_sync_added: Optional[int] = None
+    last_sync_updated: Optional[int] = None
+    last_sync_deleted: Optional[int] = None
+
+
+class SyncState(SyncStateBase):
+    """Full sync state model."""
+    id: UUID
+    sync_token: Optional[str] = None
+    last_full_sync_at: Optional[datetime] = None
+    last_incremental_sync_at: Optional[datetime] = None
+    next_sync_at: Optional[datetime] = None
+    sync_status: SyncStatus = SyncStatus.IDLE
+    error_message: Optional[str] = None
+    consecutive_failures: int = 0
+    total_synced_count: int = 0
+    last_sync_added: int = 0
+    last_sync_updated: int = 0
+    last_sync_deleted: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Sync Conflict Models
+# ============================================================================
+
+class SyncConflictBase(BaseModel):
+    """Base sync conflict fields."""
+    user_id: str = Field(..., max_length=255)
+    provider: SyncProvider
+    conflict_type: ConflictType
+    local_data: dict
+    remote_data: dict
+    suggested_resolution: Optional[dict] = None
+
+
+class SyncConflictCreate(SyncConflictBase):
+    """Schema for creating a sync conflict."""
+    person_id: Optional[UUID] = None
+    external_id: Optional[str] = None
+
+
+class SyncConflict(SyncConflictBase):
+    """Full sync conflict model."""
+    id: UUID
+    person_id: Optional[UUID] = None
+    external_id: Optional[str] = None
+    status: ConflictStatus = ConflictStatus.PENDING
+    resolution_type: Optional[ResolutionType] = None
+    resolved_at: Optional[datetime] = None
+    resolved_by: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Sync Log Models
+# ============================================================================
+
+class SyncLogCreate(BaseModel):
+    """Schema for creating a sync log entry."""
+    user_id: str = Field(..., max_length=255)
+    provider: str = Field(..., max_length=50)
+    sync_type: str = Field(..., max_length=50)  # 'full', 'incremental', 'manual'
+    direction: str = Field(..., max_length=50)  # 'pull', 'push', 'bidirectional'
+    started_at: datetime
+
+
+class SyncLogUpdate(BaseModel):
+    """Schema for updating a sync log entry."""
+    status: Optional[str] = None
+    records_processed: Optional[int] = None
+    records_added: Optional[int] = None
+    records_updated: Optional[int] = None
+    records_failed: Optional[int] = None
+    conflicts_created: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    error_details: Optional[dict] = None
+
+
+class SyncLog(BaseModel):
+    """Full sync log model."""
+    id: UUID
+    user_id: str
+    provider: str
+    sync_type: str
+    direction: str
+    status: str
+    records_processed: int = 0
+    records_added: int = 0
+    records_updated: int = 0
+    records_failed: int = 0
+    conflicts_created: int = 0
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    error_details: Optional[dict] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 

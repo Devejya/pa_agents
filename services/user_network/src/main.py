@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import persons, queries, relationships
+from .api.routes import persons, queries, relationships, sync
 from .core.config import get_settings
 from .db.connection import close_db, init_db
 
@@ -70,6 +70,7 @@ app.add_middleware(
 app.include_router(persons.router, prefix="/api/v1")
 app.include_router(relationships.router, prefix="/api/v1")
 app.include_router(queries.router, prefix="/api/v1")
+app.include_router(sync.router, prefix="/api/v1")
 
 
 @app.get("/health")
