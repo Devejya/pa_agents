@@ -23,6 +23,12 @@ from ..core.scheduler import (
 from ..core.auth import get_current_user, UserInfo
 from ..jobs.contact_sync import trigger_manual_sync, get_sync_stats
 from ..jobs.health_check import get_health_stats
+from ..jobs.token_migration import (
+    link_tokens_to_users,
+    migrate_tokens_to_per_user_encryption,
+    run_full_migration,
+    get_migration_status,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -212,5 +218,78 @@ async def get_scheduler_health(
     return {
         "scheduler_running": scheduler.running,
         "health_stats": get_health_stats(),
+    }
+
+
+# ============================================================================
+# Token Migration Endpoints (Admin)
+# ============================================================================
+
+@router.get("/migration/tokens/status")
+async def get_token_migration_status(
+    current_user: UserInfo = Depends(get_current_user),
+) -> dict:
+    """
+    Get the current status of token migration to per-user encryption.
+    
+    Shows how many tokens have been migrated vs need migration.
+    """
+    return await get_migration_status()
+
+
+@router.post("/migration/tokens/link")
+async def link_tokens_migration(
+    current_user: UserInfo = Depends(get_current_user),
+) -> dict:
+    """
+    Phase 1: Link existing OAuth tokens to users by email.
+    
+    This establishes the user_id foreign key for tokens that were
+    created before the multi-tenant update.
+    """
+    result = await link_tokens_to_users()
+    return {
+        "message": "Token linking completed" if result.get('success') else "Token linking failed",
+        "result": result,
+    }
+
+
+@router.post("/migration/tokens/encrypt")
+async def encrypt_tokens_migration(
+    current_user: UserInfo = Depends(get_current_user),
+    dry_run: bool = Query(False, description="If true, only report what would be done"),
+    email: Optional[str] = Query(None, description="Only migrate tokens for this email"),
+) -> dict:
+    """
+    Phase 2: Re-encrypt tokens with per-user DEK.
+    
+    Takes tokens encrypted with the system key and re-encrypts them
+    with each user's individual DEK for full multi-tenant security.
+    """
+    result = await migrate_tokens_to_per_user_encryption(
+        email_filter=email,
+        dry_run=dry_run,
+    )
+    return {
+        "message": "Token encryption migration completed" if result.get('success') else "Migration failed",
+        "result": result,
+    }
+
+
+@router.post("/migration/tokens/full")
+async def full_token_migration(
+    current_user: UserInfo = Depends(get_current_user),
+    dry_run: bool = Query(False, description="If true, only report what would be done"),
+) -> dict:
+    """
+    Run the complete token migration (Phase 1 + Phase 2).
+    
+    1. Links all tokens to their users
+    2. Re-encrypts all tokens with per-user DEK
+    """
+    result = await run_full_migration(dry_run=dry_run)
+    return {
+        "message": "Full migration completed" if result.get('success') else "Migration failed",
+        "result": result,
     }
 

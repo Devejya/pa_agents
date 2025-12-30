@@ -71,19 +71,26 @@ class UserResponse(BaseModel):
     authenticated: bool = True
 
 
-async def save_google_tokens(email: str, tokens: dict) -> None:
+async def save_google_tokens(email: str, tokens: dict, user_id: Optional[str] = None) -> None:
     """
     Save Google OAuth tokens for a user to the database.
     
     Args:
         email: User's email address.
         tokens: OAuth token data from Google.
+        user_id: Optional user UUID (for linking to multi-tenant user).
     """
+    from uuid import UUID
+    
     try:
         pool = await get_db_pool()
         repo = TokenRepository(pool)
-        await repo.save_tokens(email, tokens, provider="google")
-        logger.info(f"Saved Google tokens for {email}")
+        
+        # Convert user_id string to UUID if provided
+        uid = UUID(user_id) if user_id else None
+        
+        await repo.save_tokens(email, tokens, provider="google", user_id=uid)
+        logger.info(f"Saved Google tokens for {email}" + (f" (user_id={user_id})" if user_id else ""))
     except Exception as e:
         logger.error(f"Failed to save tokens for {email}: {e}")
         raise
@@ -291,16 +298,13 @@ async def oauth_callback(
         
         logger.info(f"OAuth successful for: {user_info.email}")
         
-        # Save Google tokens for API access (Calendar, Drive, etc.)
-        await save_google_tokens(user_info.email, tokens)
-        
-        # Check if email is allowed
+        # Check if email is allowed (before any DB operations)
         if not settings.is_email_allowed(user_info.email):
             logger.warning(f"Access denied for: {user_info.email}")
             redirect_url = f"{settings.frontend_url}/login?error=access_denied&email={user_info.email}"
             return RedirectResponse(url=redirect_url)
         
-        # Find or create user in our database
+        # Find or create user in our database (before saving tokens, so we can link them)
         user_id = None
         try:
             pool = await get_db_pool()
@@ -334,13 +338,18 @@ async def oauth_callback(
                     user_id = new_user["id"]
                     logger.info(f"Created new user {user_id} for {user_info.email}")
             
-            # Link any existing OAuth tokens to this user
-            await user_repo.link_oauth_tokens_to_user(user_info.email, user_id)
-            
         except Exception as e:
             # Log but don't fail login - user can still use the app without user_id
             logger.error(f"Failed to create/find user for {user_info.email}: {e}")
             # Continue without user_id for backwards compatibility
+        
+        # Save Google tokens for API access (Calendar, Drive, etc.)
+        # Now includes user_id if we have it
+        await save_google_tokens(
+            user_info.email, 
+            tokens, 
+            user_id=str(user_id) if user_id else None
+        )
         
         # Create JWT token (now includes user_id if available)
         jwt_token = create_access_token(user_info, user_id=user_id)
