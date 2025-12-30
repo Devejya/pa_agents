@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # AWS KMS for per-user encryption
     kms_key_id: str = "alias/yennifer-kek"
     aws_region: str = "us-east-1"
+    
+    # Redis for hot cache tier (optional)
+    redis_url: str = ""  # e.g., redis://localhost:6379/0 or ElastiCache endpoint
+    
+    # S3 for cold storage tier (optional)
+    chat_archive_bucket: str = ""  # e.g., yennifer-chat-archives
 
     @property
     def cors_origins_list(self) -> List[str]:
