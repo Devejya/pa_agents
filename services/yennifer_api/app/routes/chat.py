@@ -2,6 +2,7 @@
 Chat API routes for Yennifer assistant.
 """
 
+import logging
 from typing import Optional
 from uuid import UUID
 
@@ -10,6 +11,9 @@ from pydantic import BaseModel, Field
 
 from ..core.agent import YenniferAssistant
 from ..core.auth import TokenData, get_current_user
+from ..core.google_services import load_user_tokens
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -74,6 +78,12 @@ async def send_message(
     Requires authentication via JWT token.
     """
     try:
+        # Load user tokens into cache for sync tool access
+        tokens = await load_user_tokens(current_user.email)
+        if not tokens:
+            logger.warning(f"No Google tokens found for {current_user.email}")
+            # Continue anyway - tools will return appropriate errors
+        
         session = get_or_create_session(current_user.email)
         response = session.chat(request.message)
         return ChatResponse(response=response)

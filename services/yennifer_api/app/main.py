@@ -10,8 +10,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import auth, chat, workspace
+from .routes import auth, chat, workspace, jobs, contacts
 from .core.config import get_settings
+from .core.scheduler import start_scheduler, stop_scheduler
+from .db.connection import init_db, close_db
+from .jobs import register_all_jobs
 
 # Configure logging
 logging.basicConfig(
@@ -30,10 +33,32 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"OpenAI Model: {settings.openai_model}")
     
+    # Initialize database connection pool
+    logger.info("Initializing database connection...")
+    try:
+        await init_db()
+        logger.info("Database connection established")
+    except Exception as e:
+        logger.error(f"Failed to connect to database: {e}")
+        logger.warning("Continuing without database - token storage will be unavailable")
+    
+    # Start background scheduler
+    logger.info("Starting background job scheduler...")
+    register_all_jobs()
+    start_scheduler()
+    
     yield
     
     # Shutdown
     logger.info("Shutting down Yennifer API Service...")
+    
+    # Stop background scheduler
+    logger.info("Stopping background job scheduler...")
+    stop_scheduler()
+    
+    # Close database connection pool
+    logger.info("Closing database connection...")
+    await close_db()
 
 
 # Create FastAPI app
@@ -61,6 +86,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(workspace.router, prefix="/api/v1")
+app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(contacts.router, prefix="/api/v1")
 
 
 @app.get("/health")

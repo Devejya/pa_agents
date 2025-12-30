@@ -139,16 +139,24 @@ def create_calendar_event(
     end_time: str,
     description: str = "",
     location: str = "",
+    attendee_emails: str = "",
 ) -> str:
     """
-    Create a new calendar event.
+    Create a new calendar event with optional attendees.
+    
+    IMPORTANT: When the user mentions a person's name (e.g., "meeting with Anish"), 
+    you MUST first use lookup_contact_email to find their email address, then pass 
+    that email to attendee_emails.
     
     Args:
         summary: Event title
         start_time: Start time in ISO format (YYYY-MM-DDTHH:MM:SS)
         end_time: End time in ISO format (YYYY-MM-DDTHH:MM:SS)
         description: Event description (optional)
-        location: Event location (optional)
+        location: Event location (optional, can be "Google Meet" to add video conferencing)
+        attendee_emails: Comma-separated list of attendee email addresses (optional).
+                         Example: "john@example.com,jane@example.com"
+                         ALWAYS use lookup_contact_email first to get emails for names.
         
     Returns:
         Confirmation with event ID and link. Use the returned event_id for updates.
@@ -165,6 +173,11 @@ def create_calendar_event(
     except Exception as e:
         pass
     
+    # Parse attendee emails
+    attendees = None
+    if attendee_emails and attendee_emails.strip():
+        attendees = [email.strip() for email in attendee_emails.split(",") if email.strip()]
+    
     result = _create_calendar_event(
         user_email=get_current_user(),
         summary=summary,
@@ -172,8 +185,14 @@ def create_calendar_event(
         end_time=end_time,
         description=description,
         location=location,
+        attendees=attendees,
     )
-    return f"✅ Event created: **{result['summary']}**\nEvent ID: `{result['id']}`\nLink: {result['html_link']}\n\nUse Event ID `{result['id']}` if you need to update this event."
+    
+    response = f"✅ Event created: **{result['summary']}**\nEvent ID: `{result['id']}`\nLink: {result['html_link']}"
+    if attendees:
+        response += f"\nAttendees invited: {', '.join(attendees)}"
+    response += f"\n\nUse Event ID `{result['id']}` if you need to update this event."
+    return response
 
 
 @tool
@@ -912,10 +931,258 @@ def delete_presentation_slide(presentation_id: str, slide_id: str) -> str:
     return f"✅ Slide deleted from presentation"
 
 
+# ============================================================================
+# Contact Sync Tool (User Network Integration)
+# ============================================================================
+
+@tool
+def sync_contacts_to_database() -> str:
+    """
+    Sync and import Google Contacts to Yennifer's database.
+    
+    This tool syncs/stores/saves/imports the user's Google Contacts into Yennifer's 
+    contact database, enabling relationship management and intelligent assistance.
+    
+    ALWAYS use this tool when the user asks to:
+    - "sync contacts" or "sync my contacts"
+    - "store contacts" or "store my contacts in database"
+    - "save contacts to database"
+    - "import contacts" or "import my Google contacts"
+    - "update contact database"
+    - "add contacts to your database"
+    
+    Returns:
+        Confirmation that sync has been triggered.
+    """
+    import threading
+    import requests
+    
+    user_email = get_current_user()
+    if not user_email:
+        return "❌ Unable to sync: No authenticated user. Please log in first."
+    
+    def run_sync():
+        """Run sync in background thread via internal HTTP call."""
+        try:
+            # Trigger sync via internal jobs API endpoint
+            response = requests.post(
+                "http://127.0.0.1:8000/api/v1/jobs/sync/contacts/internal",
+                json={"user_email": user_email},
+                timeout=300,
+            )
+            if response.ok:
+                result = response.json()
+                print(f"Sync result for {user_email}: {result}")
+            else:
+                print(f"Sync failed for {user_email}: {response.text}")
+        except Exception as e:
+            print(f"Sync error for {user_email}: {e}")
+    
+    # Start sync in background thread
+    thread = threading.Thread(target=run_sync, daemon=True)
+    thread.start()
+    
+    return (
+        "✅ Contact sync has been started! "
+        "Your Google Contacts are being imported into my database. "
+        "You'll receive an email notification when the sync is complete. "
+        "You can check the Contacts page in a minute to see your synced contacts."
+    )
+
+
+# ============================================================================
+# User Profile Tool (User Network Integration)
+# ============================================================================
+
+@tool
+def get_my_profile() -> str:
+    """
+    Get the current user's profile information.
+    
+    Use this tool when the user asks about themselves, such as:
+    - "Who am I?"
+    - "What do you know about me?"
+    - "What's my profile?"
+    - "Tell me about myself"
+    - "What information do you have about me?"
+    
+    Returns:
+        The user's profile information including name, email, company, title, etc.
+    """
+    import requests
+    
+    user_email = get_current_user()
+    if not user_email:
+        return "I don't have access to your profile information. Please log in first."
+    
+    try:
+        # Call the User Network API to get core user profile
+        from ..core.config import get_settings
+        settings = get_settings()
+        
+        response = requests.get(
+            f"{settings.user_network_api_url}/api/v1/persons/core-user",
+            headers={
+                "X-API-Key": settings.user_network_api_key,
+                "Content-Type": "application/json"
+            },
+            timeout=10,
+        )
+        
+        if response.status_code == 404:
+            return f"I know your email is {user_email}, but I don't have additional profile information stored yet. You can tell me more about yourself!"
+        
+        if not response.ok:
+            return f"I know your email is {user_email}, but I couldn't retrieve your full profile right now."
+        
+        profile = response.json()
+        
+        # Build a friendly response
+        parts = []
+        
+        name = profile.get('name') or f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
+        if name and name != user_email:
+            parts.append(f"**Name:** {name}")
+        
+        parts.append(f"**Email:** {user_email}")
+        
+        if profile.get('company'):
+            parts.append(f"**Company:** {profile.get('company')}")
+        
+        if profile.get('latest_title'):
+            parts.append(f"**Title:** {profile.get('latest_title')}")
+        
+        if profile.get('city') or profile.get('country'):
+            location = ", ".join(filter(None, [profile.get('city'), profile.get('country')]))
+            parts.append(f"**Location:** {location}")
+        
+        if profile.get('personal_cell') or profile.get('work_cell'):
+            phone = profile.get('personal_cell') or profile.get('work_cell')
+            parts.append(f"**Phone:** {phone}")
+        
+        if profile.get('interests'):
+            interests = profile.get('interests')
+            if isinstance(interests, list) and interests:
+                parts.append(f"**Interests:** {', '.join([i.get('name', str(i)) if isinstance(i, dict) else str(i) for i in interests])}")
+        
+        if parts:
+            return "Here's what I know about you:\n\n" + "\n".join(parts)
+        else:
+            return f"I know your email is {user_email}, but I don't have much other information stored about you yet."
+            
+    except Exception as e:
+        return f"I know your email is {user_email}, but I encountered an error retrieving your profile: {str(e)}"
+
+
+@tool
+def lookup_contact_email(name: str) -> str:
+    """
+    Look up a contact's email address by their name from the User Network database.
+    
+    IMPORTANT: Use this tool BEFORE creating calendar events or sending emails when 
+    the user mentions a person by name. This finds their email so you can invite them.
+    
+    Args:
+        name: The person's name to look up (e.g., "Anish", "Mark Ryan", "John Smith")
+        
+    Returns:
+        The contact's email address if found, or a message if not found.
+        
+    Example usage:
+        - User says "set up a meeting with Anish"
+        - First call lookup_contact_email("Anish") to get their email
+        - Then use that email in create_calendar_event's attendee_emails parameter
+    """
+    import requests
+    
+    user_email = get_current_user()
+    if not user_email:
+        return "Unable to look up contacts: Please log in first."
+    
+    try:
+        from ..core.config import get_settings
+        settings = get_settings()
+        
+        # Search the User Network API for contacts matching the name
+        response = requests.get(
+            f"{settings.user_network_api_url}/api/v1/persons",
+            headers={
+                "X-API-Key": settings.user_network_api_key,
+                "Content-Type": "application/json"
+            },
+            params={"limit": 100},
+            timeout=10,
+        )
+        
+        if not response.ok:
+            return f"Could not search contacts: API error {response.status_code}"
+        
+        persons = response.json()
+        
+        # Search for matching contacts (case-insensitive)
+        name_lower = name.lower().strip()
+        matches = []
+        
+        for person in persons:
+            # Skip the core user (don't match against yourself)
+            if person.get('is_core_user'):
+                continue
+                
+            # Check various name fields
+            full_name = person.get('name', '') or ''
+            first_name = person.get('first_name', '') or ''
+            last_name = person.get('last_name', '') or ''
+            
+            # Build searchable names
+            person_names = [
+                full_name.lower(),
+                first_name.lower(),
+                last_name.lower(),
+                f"{first_name} {last_name}".lower().strip(),
+            ]
+            
+            # Check for match
+            if any(name_lower in pn or pn in name_lower for pn in person_names if pn):
+                # Get the best email
+                email = person.get('work_email') or person.get('personal_email')
+                if email:
+                    display_name = full_name or f"{first_name} {last_name}".strip() or email
+                    matches.append({
+                        'name': display_name,
+                        'email': email,
+                        'company': person.get('company'),
+                    })
+        
+        if not matches:
+            return f"No contact found with name '{name}'. Try searching with a different spelling or check the Contacts page."
+        
+        if len(matches) == 1:
+            m = matches[0]
+            result = f"Found contact: **{m['name']}**\nEmail: {m['email']}"
+            if m['company']:
+                result += f"\nCompany: {m['company']}"
+            result += f"\n\n✅ Use email `{m['email']}` when creating calendar events or sending emails."
+            return result
+        
+        # Multiple matches
+        result = f"Found {len(matches)} contacts matching '{name}':\n"
+        for m in matches:
+            result += f"\n- **{m['name']}**: {m['email']}"
+            if m['company']:
+                result += f" ({m['company']})"
+        result += "\n\nPlease specify which contact's email you'd like to use."
+        return result
+        
+    except Exception as e:
+        return f"Error looking up contact: {str(e)}"
+
+
 # Export all tools
 WORKSPACE_TOOLS = [
     # Utility
     get_current_datetime,
+    get_my_profile,  # User profile from User Network
+    lookup_contact_email,  # Look up contact email by name (for calendar invites, emails)
     # Calendar
     list_calendar_events,
     create_calendar_event,
@@ -929,6 +1196,7 @@ WORKSPACE_TOOLS = [
     # Contacts
     list_my_contacts,
     search_my_contacts,
+    sync_contacts_to_database,  # Sync Google Contacts to User Network
     # Drive
     list_drive_files,
     search_drive,

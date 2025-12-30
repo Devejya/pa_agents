@@ -5,8 +5,10 @@ Handles JWT tokens and user session management.
 """
 
 import logging
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -20,6 +22,30 @@ logger = logging.getLogger(__name__)
 # Security scheme for JWT
 security = HTTPBearer(auto_error=False)
 
+# Context variable for current user ID (used for RLS)
+_current_user_id: ContextVar[Optional[UUID]] = ContextVar("current_user_id", default=None)
+_current_user_email: ContextVar[Optional[str]] = ContextVar("current_user_email", default=None)
+
+
+def get_current_user_id() -> Optional[UUID]:
+    """Get the current user's ID from context."""
+    return _current_user_id.get()
+
+
+def set_current_user_id(user_id: Optional[UUID]) -> None:
+    """Set the current user's ID in context."""
+    _current_user_id.set(user_id)
+
+
+def get_current_user_email() -> Optional[str]:
+    """Get the current user's email from context."""
+    return _current_user_email.get()
+
+
+def set_current_user_email(email: Optional[str]) -> None:
+    """Set the current user's email in context."""
+    _current_user_email.set(email)
+
 
 class UserInfo(BaseModel):
     """User information from Google OAuth."""
@@ -28,10 +54,13 @@ class UserInfo(BaseModel):
     picture: Optional[str] = None
     given_name: Optional[str] = None
     family_name: Optional[str] = None
+    # Google's unique user ID (sub claim)
+    google_user_id: Optional[str] = None
 
 
 class TokenData(BaseModel):
     """JWT token payload."""
+    user_id: Optional[str] = None  # UUID as string (for new tokens)
     email: str
     name: str
     picture: Optional[str] = None
@@ -39,12 +68,13 @@ class TokenData(BaseModel):
     iat: datetime
 
 
-def create_access_token(user_info: UserInfo) -> str:
+def create_access_token(user_info: UserInfo, user_id: Optional[UUID] = None) -> str:
     """
     Create a JWT access token for an authenticated user.
     
     Args:
         user_info: User information from Google OAuth
+        user_id: User's internal UUID (if known)
         
     Returns:
         JWT token string
@@ -61,6 +91,10 @@ def create_access_token(user_info: UserInfo) -> str:
         "exp": expire,
         "iat": now,
     }
+    
+    # Include user_id if available (new multi-tenant tokens)
+    if user_id:
+        payload["user_id"] = str(user_id)
     
     token = jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return token
@@ -103,6 +137,9 @@ async def get_current_user(
     Checks for JWT token in:
     1. Authorization header (Bearer token)
     2. Cookie (auth_token)
+    
+    Also sets context variables for user_id and email for use in RLS
+    and other per-user operations.
     
     Args:
         request: FastAPI request
@@ -147,6 +184,14 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Your email is not authorized.",
         )
+    
+    # Set context variables for per-user operations
+    set_current_user_email(token_data.email)
+    if token_data.user_id:
+        try:
+            set_current_user_id(UUID(token_data.user_id))
+        except ValueError:
+            logger.warning(f"Invalid user_id in token: {token_data.user_id}")
     
     return token_data
 

@@ -4,27 +4,23 @@ Authentication routes for Google OAuth.
 Handles login, callback, logout, and user info endpoints.
 """
 
-import json
+import asyncio
 import logging
-import os
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from ..core.auth import TokenData, UserInfo, create_access_token, get_current_user
 from ..core.config import get_settings
+from ..db import get_db_pool
+from ..db.token_repository import TokenRepository
+from ..db.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
-
-# Token storage directory
-TOKENS_DIR = Path(__file__).parent.parent.parent / "tokens"
-TOKENS_DIR.mkdir(exist_ok=True)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -75,44 +71,57 @@ class UserResponse(BaseModel):
     authenticated: bool = True
 
 
-def _get_token_path(email: str) -> Path:
-    """Get the token file path for a user."""
-    # Sanitize email for filename
-    safe_email = email.replace("@", "_at_").replace(".", "_")
-    return TOKENS_DIR / f"{safe_email}_google_token.json"
+async def save_google_tokens(email: str, tokens: dict) -> None:
+    """
+    Save Google OAuth tokens for a user to the database.
+    
+    Args:
+        email: User's email address.
+        tokens: OAuth token data from Google.
+    """
+    try:
+        pool = await get_db_pool()
+        repo = TokenRepository(pool)
+        await repo.save_tokens(email, tokens, provider="google")
+        logger.info(f"Saved Google tokens for {email}")
+    except Exception as e:
+        logger.error(f"Failed to save tokens for {email}: {e}")
+        raise
 
 
-def save_google_tokens(email: str, tokens: dict) -> None:
-    """Save Google OAuth tokens for a user."""
-    token_path = _get_token_path(email)
-    token_data = {
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type", "Bearer"),
-        "expires_in": tokens.get("expires_in"),
-        "scope": tokens.get("scope"),
-        "saved_at": datetime.now(timezone.utc).isoformat(),
-    }
-    with open(token_path, "w") as f:
-        json.dump(token_data, f, indent=2)
-    logger.info(f"Saved Google tokens for {email}")
-
-
-def get_google_tokens(email: str) -> Optional[dict]:
-    """Load Google OAuth tokens for a user."""
-    token_path = _get_token_path(email)
-    if not token_path.exists():
+async def get_google_tokens(email: str) -> Optional[dict]:
+    """
+    Load Google OAuth tokens for a user from the database.
+    
+    Args:
+        email: User's email address.
+        
+    Returns:
+        Token dictionary if found, None otherwise.
+    """
+    try:
+        pool = await get_db_pool()
+        repo = TokenRepository(pool)
+        return await repo.get_tokens(email, provider="google")
+    except Exception as e:
+        logger.error(f"Failed to get tokens for {email}: {e}")
         return None
-    with open(token_path, "r") as f:
-        return json.load(f)
 
 
-def delete_google_tokens(email: str) -> None:
-    """Delete Google OAuth tokens for a user."""
-    token_path = _get_token_path(email)
-    if token_path.exists():
-        token_path.unlink()
+async def delete_google_tokens(email: str) -> None:
+    """
+    Delete (revoke) Google OAuth tokens for a user.
+    
+    Args:
+        email: User's email address.
+    """
+    try:
+        pool = await get_db_pool()
+        repo = TokenRepository(pool)
+        await repo.delete_tokens(email, provider="google", reason="user_logout")
         logger.info(f"Deleted Google tokens for {email}")
+    except Exception as e:
+        logger.error(f"Failed to delete tokens for {email}: {e}")
 
 
 @router.get("/login")
@@ -157,9 +166,59 @@ async def login(
     return RedirectResponse(url=auth_url)
 
 
+async def _trigger_initial_core_user_sync(user_email: str, user_info: dict):
+    """
+    Background task to sync core user data after login.
+    
+    This runs asynchronously after the OAuth callback completes,
+    so the user isn't blocked waiting for sync to finish.
+    
+    Args:
+        user_email: User's email address
+        user_info: Basic user info from Google OAuth (name, picture, etc.)
+    """
+    from ..jobs.core_user_sync import trigger_core_user_sync
+    
+    try:
+        logger.info(f"👤 Triggering core user sync for {user_email}")
+        result = await trigger_core_user_sync(user_email)
+        
+        if result.get('success'):
+            action = 'created' if result.get('created') else 'updated'
+            logger.info(f"✅ Core user {action} for {user_email}")
+        else:
+            logger.warning(f"⚠️ Core user sync incomplete for {user_email}: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"❌ Core user sync failed for {user_email}: {e}")
+
+
+async def _trigger_initial_contact_sync(user_email: str):
+    """
+    Background task to sync contacts after user login.
+    
+    This runs asynchronously after the OAuth callback completes,
+    so the user isn't blocked waiting for sync to finish.
+    """
+    from ..jobs.contact_sync import trigger_manual_sync
+    
+    try:
+        logger.info(f"🔄 Triggering initial contact sync for {user_email}")
+        result = await trigger_manual_sync(user_email)
+        
+        if result.get('success'):
+            added = result.get('added', 0)
+            updated = result.get('updated', 0)
+            logger.info(f"✅ Initial sync complete for {user_email}: {added} added, {updated} updated")
+        else:
+            logger.warning(f"⚠️ Initial sync incomplete for {user_email}: {result.get('errors', [])}")
+    except Exception as e:
+        logger.error(f"❌ Initial contact sync failed for {user_email}: {e}")
+
+
 @router.get("/callback")
 async def oauth_callback(
     request: Request,
+    background_tasks: BackgroundTasks,
     code: str = Query(..., description="Authorization code from Google"),
     state: Optional[str] = Query(None, description="State parameter with redirect URL"),
     error: Optional[str] = Query(None, description="Error from Google"),
@@ -220,18 +279,20 @@ async def oauth_callback(
             userinfo = userinfo_response.json()
             
         # Create UserInfo object
+        google_user_id = userinfo.get("id") or userinfo.get("sub")  # Google's unique ID
         user_info = UserInfo(
             email=userinfo.get("email"),
             name=userinfo.get("name", userinfo.get("email")),
             picture=userinfo.get("picture"),
             given_name=userinfo.get("given_name"),
             family_name=userinfo.get("family_name"),
+            google_user_id=google_user_id,
         )
         
         logger.info(f"OAuth successful for: {user_info.email}")
         
         # Save Google tokens for API access (Calendar, Drive, etc.)
-        save_google_tokens(user_info.email, tokens)
+        await save_google_tokens(user_info.email, tokens)
         
         # Check if email is allowed
         if not settings.is_email_allowed(user_info.email):
@@ -239,8 +300,67 @@ async def oauth_callback(
             redirect_url = f"{settings.frontend_url}/login?error=access_denied&email={user_info.email}"
             return RedirectResponse(url=redirect_url)
         
-        # Create JWT token
-        jwt_token = create_access_token(user_info)
+        # Find or create user in our database
+        user_id = None
+        try:
+            pool = await get_db_pool()
+            user_repo = UserRepository(pool)
+            
+            # Try to find existing user by OAuth identity
+            existing_user = await user_repo.find_user_by_oauth("google", google_user_id)
+            
+            if existing_user:
+                user_id = existing_user["id"]
+                logger.info(f"Found existing user {user_id} for {user_info.email}")
+            else:
+                # Try to find by email (user might exist from before multi-tenant)
+                user_by_email = await user_repo.get_user_by_email(user_info.email)
+                
+                if user_by_email:
+                    # User exists, just add this OAuth identity
+                    user_id = user_by_email["id"]
+                    await user_repo.add_identity(
+                        user_id, "google", google_user_id, user_info.email
+                    )
+                    logger.info(f"Linked Google identity to existing user {user_id}")
+                else:
+                    # Create new user
+                    new_user = await user_repo.create_user(
+                        email=user_info.email,
+                        provider="google",
+                        provider_user_id=google_user_id,
+                        provider_email=user_info.email,
+                    )
+                    user_id = new_user["id"]
+                    logger.info(f"Created new user {user_id} for {user_info.email}")
+            
+            # Link any existing OAuth tokens to this user
+            await user_repo.link_oauth_tokens_to_user(user_info.email, user_id)
+            
+        except Exception as e:
+            # Log but don't fail login - user can still use the app without user_id
+            logger.error(f"Failed to create/find user for {user_info.email}: {e}")
+            # Continue without user_id for backwards compatibility
+        
+        # Create JWT token (now includes user_id if available)
+        jwt_token = create_access_token(user_info, user_id=user_id)
+        
+        # Trigger core user sync in background first (to create/update user record)
+        background_tasks.add_task(
+            _trigger_initial_core_user_sync, 
+            user_info.email,
+            {
+                'name': user_info.name,
+                'given_name': user_info.given_name,
+                'family_name': user_info.family_name,
+                'picture': user_info.picture,
+            }
+        )
+        logger.info(f"👤 Scheduled core user sync for {user_info.email}")
+        
+        # Trigger contact sync in background (don't block login)
+        background_tasks.add_task(_trigger_initial_contact_sync, user_info.email)
+        logger.info(f"📇 Scheduled initial contact sync for {user_info.email}")
         
         # Determine redirect URL
         redirect_url = state or settings.frontend_url

@@ -8,8 +8,6 @@ import { getAuthHeaders, clearAuthToken } from '../contexts/AuthContext';
 // In development, use localhost URLs
 const isProduction = import.meta.env.PROD;
 const YENNIFER_API_URL = import.meta.env.VITE_YENNIFER_API_URL || (isProduction ? '' : 'http://localhost:8000');
-const USER_NETWORK_API_URL = import.meta.env.VITE_USER_NETWORK_API_URL || (isProduction ? '' : 'http://localhost:8001');
-const USER_NETWORK_API_KEY = import.meta.env.VITE_USER_NETWORK_API_KEY || '';
 
 /**
  * Handle API response, check for auth errors
@@ -125,68 +123,50 @@ export interface ContactWithRelationship extends Contact {
   relationship?: string;
 }
 
-const userNetworkHeaders = {
-  'Content-Type': 'application/json',
-  'X-API-Key': USER_NETWORK_API_KEY,
-};
+// Contacts API - Now proxied through Yennifer API for proper authentication
 
 export async function getContacts(): Promise<Contact[]> {
-  const response = await fetch(`${USER_NETWORK_API_URL}/api/v1/persons`, {
-    headers: userNetworkHeaders,
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/contacts`, {
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to get contacts: ${response.statusText}`);
-  }
-
+  await handleResponse(response, 'Failed to get contacts');
   return response.json();
 }
 
 export async function getCoreUser(): Promise<Contact> {
-  const response = await fetch(`${USER_NETWORK_API_URL}/api/v1/persons/core-user`, {
-    headers: userNetworkHeaders,
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/contacts/core-user`, {
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to get core user: ${response.statusText}`);
-  }
-
+  await handleResponse(response, 'Failed to get core user');
   return response.json();
 }
 
 export async function getContactById(id: string): Promise<Contact> {
-  const response = await fetch(`${USER_NETWORK_API_URL}/api/v1/persons/${id}`, {
-    headers: userNetworkHeaders,
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/contacts/${id}`, {
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to get contact: ${response.statusText}`);
-  }
-
+  await handleResponse(response, 'Failed to get contact');
   return response.json();
 }
 
 export async function getRelationshipsForPerson(personId: string): Promise<Relationship[]> {
-  const response = await fetch(`${USER_NETWORK_API_URL}/api/v1/relationships/person/${personId}`, {
-    headers: userNetworkHeaders,
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/contacts/${personId}/relationships`, {
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to get relationships: ${response.statusText}`);
-  }
-
+  await handleResponse(response, 'Failed to get relationships');
   return response.json();
 }
 
 export async function searchContacts(query: string): Promise<Contact[]> {
-  const response = await fetch(`${USER_NETWORK_API_URL}/api/v1/persons/search?q=${encodeURIComponent(query)}`, {
-    headers: userNetworkHeaders,
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/contacts/search?q=${encodeURIComponent(query)}`, {
+    headers: getAuthHeaders(),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to search contacts: ${response.statusText}`);
-  }
-
+  await handleResponse(response, 'Failed to search contacts');
   return response.json();
 }
 
@@ -195,28 +175,39 @@ export async function searchContacts(query: string): Promise<Contact[]> {
  */
 export async function getContactsWithRelationships(): Promise<ContactWithRelationship[]> {
   try {
-    // Get core user first
-    const coreUser = await getCoreUser();
-    
-    // Get all contacts
+    // Get all contacts first
     const allContacts = await getContacts();
     
-    // Get relationships for core user
-    const relationships = await getRelationshipsForPerson(coreUser.id);
-    
-    // Create a map of person_id -> relationship role
-    const relationshipMap = new Map<string, string>();
-    for (const rel of relationships) {
-      relationshipMap.set(rel.to_person_id, rel.to_role);
-    }
-    
-    // Filter out core user and add relationship info
+    // Filter out core user
     const contactsWithRels: ContactWithRelationship[] = allContacts
       .filter(c => !c.is_core_user)
       .map(contact => ({
         ...contact,
-        relationship: relationshipMap.get(contact.id),
+        relationship: undefined,
       }));
+    
+    // Try to get core user for relationships (optional)
+    try {
+      const coreUser = await getCoreUser();
+      if (coreUser?.id) {
+        const relationships = await getRelationshipsForPerson(coreUser.id);
+        
+        // Create a map of person_id -> relationship role
+        const relationshipMap = new Map<string, string>();
+        for (const rel of relationships) {
+          relationshipMap.set(rel.to_person_id, rel.to_role);
+        }
+        
+        // Add relationship info to contacts
+        return contactsWithRels.map(contact => ({
+          ...contact,
+          relationship: relationshipMap.get(contact.id),
+        }));
+      }
+    } catch {
+      // Core user doesn't exist yet - that's okay, just return contacts without relationships
+      console.log('No core user found, showing contacts without relationship info');
+    }
     
     return contactsWithRels;
   } catch (error) {

@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
+    # Database (PostgreSQL)
+    database_url: str = "postgresql://localhost:5432/yennifer"
+    database_pool_size: int = 10
+    
+    # Encryption key for sensitive data (Fernet key, 32 url-safe base64 chars)
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    encryption_key: str = ""
+
     # User Network Service
     user_network_api_url: str = "http://localhost:8001"
     user_network_api_key: str = ""
@@ -53,6 +61,18 @@ class Settings(BaseSettings):
     
     # Frontend URL (for redirects)
     frontend_url: str = "http://localhost:5173"
+    
+    # SendGrid Email Service
+    sendgrid_api_key: str = ""
+    sendgrid_from_email: str = "yennifer@yennifer.ai"
+    sendgrid_from_name: str = "Yennifer"
+    
+    # Admin email for notifications
+    admin_email: str = "draghuva@gmail.com"
+    
+    # AWS KMS for per-user encryption
+    kms_key_id: str = "alias/yennifer-kek"
+    aws_region: str = "us-east-1"
 
     @property
     def cors_origins_list(self) -> List[str]:

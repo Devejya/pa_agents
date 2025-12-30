@@ -111,7 +111,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <p className="mt-8 text-sm text-violet-200/30">
-        © 2024 Yennifer. All rights reserved.
+        © 2025 Yennifer. All rights reserved.
       </p>
     </div>
   );
