@@ -96,40 +96,56 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      {/* Header - hidden on mobile since Layout shows a header */}
+      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-gray-900">Chat with Yennifer</h1>
+          <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Chat with Yennifer</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 lg:gap-4">
           <button
             onClick={handleClearHistory}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
           >
             Clear history
           </button>
-          <div className="w-9 h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
+          <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center shrink-0">
             <span className="text-white text-sm font-bold">U</span>
           </div>
         </div>
       </header>
 
+      {/* Mobile sub-header */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900">Chat</h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleClearHistory}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            Clear
+          </button>
+          <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">U</span>
+          </div>
+        </div>
+      </div>
+
       {/* Chat area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-6">
-          {/* Assistant header */}
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
-            <div className="w-10 h-10 bg-yennifer-700 rounded-full flex items-center justify-center">
-              <span className="text-white font-bold">Y</span>
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-4xl mx-auto px-3 py-4 sm:px-4 sm:py-5 md:p-6">
+          {/* Assistant header - compact on mobile */}
+          <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-gray-100">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-yennifer-700 rounded-full flex items-center justify-center shrink-0">
+              <span className="text-white font-bold text-sm sm:text-base">Y</span>
             </div>
-            <div>
-              <h2 className="font-semibold text-gray-900">Yennifer</h2>
-              <p className="text-sm text-gray-500">Your AI Executive Assistant</p>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-gray-900 text-sm sm:text-base">Yennifer</h2>
+              <p className="text-xs sm:text-sm text-gray-500 truncate">Your AI Executive Assistant</p>
             </div>
           </div>
 
           {/* Messages */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {messages.length === 0 ? (
               <ChatMessage
                 role="assistant"
@@ -158,9 +174,9 @@ export default function ChatPage() {
       </div>
 
       {/* Input area */}
-      <div className="bg-white border-t border-gray-200 p-4">
+      <div className="bg-white border-t border-gray-200 p-3 sm:p-4 shrink-0">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSubmit} className="flex gap-3">
+          <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3">
             <input
               ref={inputRef}
               type="text"
@@ -168,12 +184,12 @@ export default function ChatPage() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask Yennifer anything..."
               disabled={isThinking}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+              className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
             />
             <button
               type="submit"
               disabled={!input.trim() || isThinking}
-              className="px-6 py-3 bg-yennifer-700 text-white rounded-full font-medium hover:bg-yennifer-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-yennifer-700 text-white rounded-full font-medium text-sm sm:text-base hover:bg-yennifer-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
             >
               Send
             </button>
@@ -181,11 +197,10 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Help button (floating) */}
-      <button className="fixed bottom-24 right-6 w-10 h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors">
+      {/* Help button (floating) - adjusted position for mobile */}
+      <button className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>
   );
 }
-

@@ -10,61 +10,86 @@ const navItems = [
   { path: '/reminders', label: 'Reminders', icon: BellIcon },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+  isMobile?: boolean;
+}
+
+export default function Sidebar({ onClose, isMobile }: SidebarProps) {
   const { user, logout } = useAuth();
 
   const handleLogout = async () => {
     await logout();
   };
 
+  const handleNavClick = () => {
+    // Close sidebar on mobile when navigating
+    if (isMobile && onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <aside className="w-72 bg-white border-r border-gray-200 flex flex-col h-screen">
+    <aside className="w-72 max-w-[85vw] bg-white border-r border-gray-200 flex flex-col h-screen">
       {/* Logo/Brand */}
-      <div className="p-6 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-yennifer-700 rounded-full flex items-center justify-center">
-            <span className="text-white text-xl font-bold">Y</span>
+      <div className="p-4 sm:p-6 border-b border-gray-100">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yennifer-700 rounded-full flex items-center justify-center shrink-0">
+              <span className="text-white text-lg sm:text-xl font-bold">Y</span>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Yennifer</h1>
+              <p className="text-xs sm:text-sm text-gray-500 truncate">Your AI executive assistant</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">Yennifer</h1>
-            <p className="text-sm text-gray-500">Your AI executive assistant</p>
-          </div>
+          {/* Close button for mobile */}
+          {isMobile && (
+            <button
+              onClick={onClose}
+              className="p-2 -mr-2 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+              aria-label="Close menu"
+            >
+              <CloseIcon className="w-5 h-5 text-gray-500" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={handleNavClick}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg transition-colors ${
                 isActive
                   ? 'bg-yennifer-700 text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
               }`
             }
           >
-            <item.icon className="w-5 h-5" />
-            <span className="font-medium">{item.label}</span>
+            <item.icon className="w-5 h-5 shrink-0" />
+            <span className="font-medium text-sm sm:text-base truncate">{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
       {/* User info and logout */}
-      <div className="p-4 border-t border-gray-100">
+      <div className="p-3 sm:p-4 border-t border-gray-100">
         {user && (
           <div className="flex items-center gap-3 mb-3">
             {user.picture ? (
               <img
                 src={user.picture}
                 alt={user.name}
-                className="w-10 h-10 rounded-full"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full shrink-0"
               />
             ) : (
-              <div className="w-10 h-10 bg-yennifer-600 rounded-full flex items-center justify-center">
-                <span className="text-white font-medium">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-yennifer-600 rounded-full flex items-center justify-center shrink-0">
+                <span className="text-white font-medium text-sm">
                   {user.name.charAt(0).toUpperCase()}
                 </span>
               </div>
@@ -77,13 +102,21 @@ export default function Sidebar() {
         )}
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors"
         >
           <LogoutIcon className="w-4 h-4" />
           Sign out
         </button>
       </div>
     </aside>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
   );
 }
 
@@ -143,4 +176,3 @@ function BellIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-

@@ -40,48 +40,56 @@ function getCategoryColor(category: string) {
 export default function ReportsPage() {
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Research Reports</h1>
-        <div className="w-9 h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
+      {/* Header - hidden on mobile since Layout shows a header */}
+      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+        <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Research Reports</h1>
+        <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-sm font-bold">U</span>
         </div>
       </header>
 
+      {/* Mobile sub-header */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900">Reports</h1>
+        <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
+          <span className="text-white text-xs font-bold">U</span>
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
         <div className="max-w-4xl mx-auto">
           {/* Page title */}
-          <div className="flex items-center gap-3 mb-2">
-            <ReportsIcon className="w-7 h-7 text-gray-700" />
-            <h2 className="text-2xl font-bold text-gray-900">Research Reports</h2>
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
+            <ReportsIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700" />
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Research Reports</h2>
           </div>
-          <p className="text-gray-500 mb-6">Detailed research and analysis compiled by Yennifer</p>
+          <p className="text-gray-500 text-sm sm:text-base mb-4 sm:mb-6">Detailed research and analysis compiled by Yennifer</p>
 
           {/* Reports list */}
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {mockReports.map((report) => (
               <div
                 key={report.id}
-                className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 hover:shadow-md transition-shadow cursor-pointer"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getCategoryColor(report.category)}`}>
+                <div className="flex items-start justify-between gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                      <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs font-medium whitespace-nowrap ${getCategoryColor(report.category)}`}>
                         {report.category}
                       </span>
-                      <span className="text-sm text-gray-500">{report.wordCount.toLocaleString()} words</span>
+                      <span className="text-xs sm:text-sm text-gray-500">{report.wordCount.toLocaleString()} words</span>
                     </div>
-                    <h3 className="font-semibold text-gray-900 text-lg">{report.title}</h3>
-                    <p className="text-gray-500 mt-2">{report.description}</p>
-                    <div className="flex items-center gap-2 mt-3 text-sm text-gray-500">
-                      <CalendarIcon className="w-4 h-4" />
+                    <h3 className="font-semibold text-gray-900 text-sm sm:text-lg line-clamp-2">{report.title}</h3>
+                    <p className="text-gray-500 text-xs sm:text-base mt-1 sm:mt-2 line-clamp-2 sm:line-clamp-none">{report.description}</p>
+                    <div className="flex items-center gap-2 mt-2 sm:mt-3 text-xs sm:text-sm text-gray-500">
+                      <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       <span>{report.date}</span>
                     </div>
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600">
-                    <EyeIcon className="w-5 h-5" />
+                  <button className="text-gray-400 hover:text-gray-600 shrink-0 p-1">
+                    <EyeIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                 </div>
               </div>
@@ -91,7 +99,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Help button */}
-      <button className="fixed bottom-6 right-6 w-10 h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors">
+      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>
@@ -122,4 +130,3 @@ function EyeIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-

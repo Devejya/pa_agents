@@ -25,23 +25,31 @@ export default function ContactsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Contacts</h1>
-        <div className="w-9 h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
+      {/* Header - hidden on mobile since Layout shows a header */}
+      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+        <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Contacts</h1>
+        <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-sm font-bold">U</span>
         </div>
       </header>
 
+      {/* Mobile sub-header */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900">Contacts</h1>
+        <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
+          <span className="text-white text-xs font-bold">U</span>
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
         <div className="max-w-6xl mx-auto">
           {/* Page title */}
-          <div className="flex items-center gap-3 mb-2">
-            <ContactsIcon className="w-7 h-7 text-gray-700" />
-            <h2 className="text-2xl font-bold text-gray-900">Contacts</h2>
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
+            <ContactsIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700" />
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Contacts</h2>
           </div>
-          <p className="text-gray-500 mb-6">People in your network managed by Yennifer</p>
+          <p className="text-gray-500 text-sm sm:text-base mb-4 sm:mb-6">People in your network managed by Yennifer</p>
 
           {/* Loading state */}
           {loading && (
@@ -52,7 +60,7 @@ export default function ContactsPage() {
 
           {/* Error state */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 text-red-700 text-sm">
               {error}
             </div>
           )}
@@ -60,15 +68,15 @@ export default function ContactsPage() {
           {/* Empty state */}
           {!loading && !error && contacts.length === 0 && (
             <div className="text-center py-12 text-gray-500">
-              <ContactsIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No contacts found</p>
-              <p className="text-sm mt-1">Ask Yennifer to discover contacts from your emails</p>
+              <ContactsIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-sm sm:text-base">No contacts found</p>
+              <p className="text-xs sm:text-sm mt-1">Ask Yennifer to discover contacts from your emails</p>
             </div>
           )}
 
           {/* Contacts grid */}
           {!loading && !error && contacts.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {contacts.map((contact) => (
                 <ContactCard
                   key={contact.id}
@@ -90,7 +98,7 @@ export default function ContactsPage() {
       )}
 
       {/* Help button */}
-      <button className="fixed bottom-6 right-6 w-10 h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors">
+      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>
@@ -106,66 +114,85 @@ function ContactDetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-6 border-b border-gray-100">
+        <div className="p-4 sm:p-6 border-b border-gray-100">
           <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-yennifer-600 rounded-full flex items-center justify-center">
-                <span className="text-white text-2xl font-bold">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yennifer-600 rounded-full flex items-center justify-center shrink-0">
+                <span className="text-white text-lg sm:text-2xl font-bold">
                   {contact.name.charAt(0).toUpperCase()}
                 </span>
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">{contact.name}</h2>
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{contact.name}</h2>
                 {contact.relationship && (
-                  <p className="text-gray-500 capitalize">{contact.relationship}</p>
+                  <p className="text-gray-500 capitalize text-sm sm:text-base">{contact.relationship}</p>
                 )}
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 shrink-0"
             >
-              <CloseIcon className="w-6 h-6" />
+              <CloseIcon className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* Contact info */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
               Contact Information
             </h3>
-            <div className="space-y-3">
-              {contact.personal_email && (
-                <InfoRow icon={<MailIcon />} label="Personal Email" value={contact.personal_email} />
-              )}
-              {contact.work_email && (
-                <InfoRow icon={<MailIcon />} label="Work Email" value={contact.work_email} />
-              )}
-              {contact.personal_cell && (
-                <InfoRow icon={<PhoneIcon />} label="Personal Phone" value={contact.personal_cell} />
-              )}
-              {contact.work_cell && (
-                <InfoRow icon={<PhoneIcon />} label="Work Phone" value={contact.work_cell} />
-              )}
+            <div className="space-y-2 sm:space-y-3">
+              {(() => {
+                const phone = contact.personal_cell || contact.work_cell;
+                const email = contact.personal_email || contact.work_email;
+                const isPlaceholderPhone = contact.is_placeholder_phone || (phone && phone.startsWith('+0-000-000'));
+                const isPlaceholderEmail = contact.is_placeholder_email || (email && email.includes('@fake.internal'));
+                
+                const hasRealContact = (email && !isPlaceholderEmail) || (phone && !isPlaceholderPhone);
+                
+                return (
+                  <>
+                    {contact.personal_email && !isPlaceholderEmail && (
+                      <InfoRow icon={<MailIcon />} label="Personal Email" value={contact.personal_email} />
+                    )}
+                    {contact.work_email && !isPlaceholderEmail && (
+                      <InfoRow icon={<MailIcon />} label="Work Email" value={contact.work_email} />
+                    )}
+                    {contact.personal_cell && !isPlaceholderPhone && (
+                      <InfoRow icon={<PhoneIcon />} label="Personal Phone" value={contact.personal_cell} />
+                    )}
+                    {contact.work_cell && !isPlaceholderPhone && (
+                      <InfoRow icon={<PhoneIcon />} label="Work Phone" value={contact.work_cell} />
+                    )}
+                    {!hasRealContact && (
+                      <div className="text-rose-500 text-xs sm:text-sm italic flex items-center gap-2">
+                        <WarningIcon />
+                        No contact information on file. Ask Yennifer to add it.
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </section>
 
           {/* Work info */}
           {(contact.company || contact.latest_title) && (
             <section>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
                 Professional
               </h3>
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {contact.latest_title && (
                   <InfoRow icon={<BriefcaseIcon />} label="Title" value={contact.latest_title} />
                 )}
@@ -179,7 +206,7 @@ function ContactDetailModal({
           {/* Location */}
           {(contact.city || contact.country) && (
             <section>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
                 Location
               </h3>
               <InfoRow
@@ -193,14 +220,14 @@ function ContactDetailModal({
           {/* Interests */}
           {contact.interests && contact.interests.length > 0 && (
             <section>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
                 Interests
               </h3>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 {contact.interests.map((interest) => (
                   <span
                     key={interest.id}
-                    className="px-3 py-1 bg-yennifer-50 text-yennifer-700 rounded-full text-sm capitalize"
+                    className="px-2 sm:px-3 py-0.5 sm:py-1 bg-yennifer-50 text-yennifer-700 rounded-full text-xs sm:text-sm capitalize"
                   >
                     {interest.name}
                   </span>
@@ -224,11 +251,11 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5">{icon}</div>
-      <div>
+    <div className="flex items-start gap-2 sm:gap-3">
+      <div className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0 mt-0.5">{icon}</div>
+      <div className="min-w-0">
         <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-gray-900">{value}</p>
+        <p className="text-gray-900 text-sm sm:text-base break-words">{value}</p>
       </div>
     </div>
   );
@@ -292,3 +319,10 @@ function LocationIcon() {
   );
 }
 
+function WarningIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  );
+}
