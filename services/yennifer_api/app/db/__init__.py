@@ -9,6 +9,12 @@ from .crypto import encrypt_token, decrypt_token
 from .token_repository import TokenRepository
 from .user_repository import UserRepository
 from .chat_repository import ChatRepository
+from .user_data_repository import (
+    InterestsRepository,
+    ImportantDatesRepository,
+    UserTasksRepository,
+    MemoriesRepository,
+)
 
 __all__ = [
     "init_db",
@@ -21,5 +27,9 @@ __all__ = [
     "TokenRepository",
     "UserRepository",
     "ChatRepository",
+    "InterestsRepository",
+    "ImportantDatesRepository",
+    "UserTasksRepository",
+    "MemoriesRepository",
 ]
 

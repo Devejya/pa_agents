@@ -28,13 +28,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _sessions: dict[str, YenniferAssistant] = {}
 
 
-def get_or_create_session(user_email: str) -> YenniferAssistant:
+def get_or_create_session(user_email: str, user_id: Optional[UUID] = None) -> YenniferAssistant:
     """Get existing session or create new one for the user."""
     if user_email not in _sessions:
-        _sessions[user_email] = YenniferAssistant(user_email=user_email)
+        _sessions[user_email] = YenniferAssistant(user_email=user_email, user_id=user_id)
     else:
-        # Ensure user email is set (in case session was created without it)
-        _sessions[user_email].set_user(user_email)
+        # Ensure user email and ID are set (in case session was created without them)
+        _sessions[user_email].set_user(user_email, user_id)
     return _sessions[user_email]
 
 
@@ -142,11 +142,18 @@ async def send_message(
             logger.warning(f"No Google tokens found for {current_user.email}")
             # Continue anyway - tools will return appropriate errors
         
-        session = get_or_create_session(current_user.email)
+        user_id = current_user.user_id  # May be None for legacy users
+        session = get_or_create_session(current_user.email, user_id)
+        
+        # Load user context (memories, interests) for personalization
+        if user_id:
+            try:
+                await session.load_user_context()
+            except Exception as e:
+                logger.warning(f"Failed to load user context: {e}")
         
         # Determine if we should use database persistence
         db_session_id = None
-        user_id = current_user.user_id  # May be None for legacy users
         
         if user_id:
             try:

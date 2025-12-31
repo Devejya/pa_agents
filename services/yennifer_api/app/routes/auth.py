@@ -16,6 +16,8 @@ from pydantic import BaseModel
 
 from ..core.auth import TokenData, UserInfo, create_access_token, get_current_user
 from ..core.config import get_settings
+from ..core.audit import get_audit_logger, AuditAction, ResourceType
+from ..middleware import get_client_ip, get_user_agent, set_current_user_id
 from ..db import get_db_pool
 from ..db.token_repository import TokenRepository
 from ..db.user_repository import UserRepository
@@ -301,6 +303,19 @@ async def oauth_callback(
         # Check if email is allowed (before any DB operations)
         if not settings.is_email_allowed(user_info.email):
             logger.warning(f"Access denied for: {user_info.email}")
+            
+            # Audit log: login denied
+            audit = get_audit_logger()
+            await audit.log(
+                action=AuditAction.LOGIN_FAILED,
+                resource_type=ResourceType.USER_PROFILE,
+                ip_address=get_client_ip(),
+                user_agent=get_user_agent(),
+                details={"email": user_info.email, "reason": "not_in_whitelist"},
+                success=False,
+                error_message="Email not in allowed list",
+            )
+            
             redirect_url = f"{settings.frontend_url}/login?error=access_denied&email={user_info.email}"
             return RedirectResponse(url=redirect_url)
         
@@ -354,6 +369,15 @@ async def oauth_callback(
         # Create JWT token (now includes user_id if available)
         jwt_token = create_access_token(user_info, user_id=user_id)
         
+        # Audit log: successful login
+        audit = get_audit_logger()
+        await audit.log_login(
+            user_id=user_id,
+            ip_address=get_client_ip(),
+            user_agent=get_user_agent(),
+            success=True,
+        )
+        
         # Trigger core user sync in background first (to create/update user record)
         background_tasks.add_task(
             _trigger_initial_core_user_sync, 
@@ -405,12 +429,22 @@ async def oauth_callback(
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(
+    response: Response,
+    current_user: TokenData = Depends(get_current_user),
+):
     """
     Log out the current user.
     
-    Clears the auth cookie.
+    Clears the auth cookie and logs the logout.
     """
+    # Audit log: logout
+    audit = get_audit_logger()
+    await audit.log_logout(
+        user_id=current_user.user_id,
+        ip_address=get_client_ip(),
+    )
+    
     response.delete_cookie(key="auth_token")
     return {"message": "Logged out successfully"}
 

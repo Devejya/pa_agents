@@ -105,6 +105,8 @@ export interface Contact {
   interests: Interest[];
   status: string;
   is_core_user: boolean;
+  is_placeholder_phone?: boolean;
+  is_placeholder_email?: boolean;
   created_at: string;
   updated_at: string;
 }

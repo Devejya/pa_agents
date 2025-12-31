@@ -11,7 +11,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..core.auth import TokenData, get_current_user
+from ..core.audit import get_audit_logger, AuditAction, ResourceType
 from ..core.user_network_client import get_user_network_client, UserNetworkAPIError
+from ..middleware import get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +32,20 @@ async def list_contacts(
     Returns list of persons from User Network.
     """
     client = get_user_network_client()
+    audit = get_audit_logger()
     
     try:
         contacts = await client.list_persons(limit=limit, offset=offset)
+        
+        # Audit log: read contacts list
+        await audit.log_data_access(
+            user_id=current_user.user_id,
+            resource_type=ResourceType.PERSONS,
+            action=AuditAction.READ,
+            details={"count": len(contacts) if isinstance(contacts, list) else 0, "limit": limit, "offset": offset},
+            ip_address=get_client_ip(),
+        )
+        
         return contacts
     except UserNetworkAPIError as e:
         logger.error(f"Failed to get contacts: {e.message}")
@@ -110,9 +123,20 @@ async def get_contact(
     Get a specific contact by ID.
     """
     client = get_user_network_client()
+    audit = get_audit_logger()
     
     try:
         contact = await client.get_person(str(contact_id))
+        
+        # Audit log: read specific contact
+        await audit.log_data_access(
+            user_id=current_user.user_id,
+            resource_type=ResourceType.PERSONS,
+            resource_id=str(contact_id),
+            action=AuditAction.READ,
+            ip_address=get_client_ip(),
+        )
+        
         return contact
     except UserNetworkAPIError as e:
         logger.error(f"Failed to get contact {contact_id}: {e.message}")

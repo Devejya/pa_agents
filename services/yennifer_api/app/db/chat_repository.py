@@ -57,7 +57,7 @@ class ChatRepository:
             async with self.pool.acquire() as conn:
                 # Set RLS context
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -100,7 +100,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -151,7 +151,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -211,7 +211,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -246,7 +246,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -281,7 +281,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -346,7 +346,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -420,7 +420,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -526,7 +526,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
@@ -571,7 +571,7 @@ class ChatRepository:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    "SET app.current_user_id = $1",
+                    "SELECT set_config('app.current_user_id', $1, false)",
                     str(user_id)
                 )
                 
