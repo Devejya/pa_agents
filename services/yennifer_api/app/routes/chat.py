@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..core.agent import YenniferAssistant
 from ..core.auth import TokenData, get_current_user
+from ..core.chat_cache import get_chat_cache
 from ..core.google_services import load_user_tokens
 from ..db import get_db_pool, ChatRepository
 
@@ -94,17 +95,23 @@ async def persist_message(
     content: str,
     model: Optional[str] = None,
 ) -> None:
-    """Persist a message to the database."""
+    """Persist a message to database and cache."""
     try:
         pool = await get_db_pool()
         chat_repo = ChatRepository(pool)
-        await chat_repo.add_message(
+        message = await chat_repo.add_message(
             user_id=user_id,
             session_id=session_id,
             role=role,
             content=content,
             model=model,
         )
+        
+        # Also write to cache for fast retrieval
+        cache = get_chat_cache()
+        if cache.is_enabled:
+            await cache.cache_message(user_id, session_id, message)
+            
     except Exception as e:
         logger.error(f"Failed to persist message: {e}")
         # Don't fail the request, just log
@@ -115,6 +122,51 @@ async def get_or_create_db_session(user_id: UUID) -> dict:
     pool = await get_db_pool()
     chat_repo = ChatRepository(pool)
     return await chat_repo.get_or_create_active_session(user_id)
+
+
+async def restore_agent_context_from_db(
+    agent: YenniferAssistant,
+    user_id: UUID,
+    session_id: UUID,
+) -> bool:
+    """
+    Restore agent's in-memory chat history from database.
+    
+    This enables cross-device/browser persistence - when a user logs in
+    from a new device, we load their previous conversation into the agent's
+    context so the LLM has full history.
+    
+    Args:
+        agent: The YenniferAssistant instance to populate
+        user_id: User's UUID for database access
+        session_id: The DB session to load messages from
+        
+    Returns:
+        True if history was restored, False otherwise
+    """
+    try:
+        pool = await get_db_pool()
+        chat_repo = ChatRepository(pool)
+        
+        # Get messages from database (already decrypted by repository)
+        messages = await chat_repo.get_session_messages(
+            user_id=user_id,
+            session_id=session_id,
+            limit=50,  # Limit context window for LLM
+        )
+        
+        if messages:
+            # Convert to agent's history format
+            history = [{"role": m["role"], "content": m["content"]} for m in messages]
+            agent.set_history(history)
+            logger.info(f"Restored {len(messages)} messages into agent context for user {user_id}")
+            return True
+            
+        return False
+        
+    except Exception as e:
+        logger.error(f"Failed to restore agent context from DB: {e}")
+        return False
 
 
 # ============== API Endpoints ==============
@@ -154,6 +206,7 @@ async def send_message(
         
         # Determine if we should use database persistence
         db_session_id = None
+        is_new_session = False
         
         if user_id:
             try:
@@ -163,6 +216,14 @@ async def send_message(
                 else:
                     db_session = await get_or_create_db_session(user_id)
                     db_session_id = db_session["id"]
+                    # Track if this is a brand new session (for auto-titling)
+                    is_new_session = db_session.get("message_count", 0) == 0
+                
+                # CRITICAL: Restore agent context from DB if in-memory is empty
+                # This enables cross-device persistence - when user logs in from
+                # a new browser/device, we load their previous conversation
+                if not session.get_history() and db_session_id:
+                    await restore_agent_context_from_db(session, user_id, db_session_id)
                 
                 # Persist user message
                 await persist_message(
@@ -188,6 +249,14 @@ async def send_message(
                     content=response,
                     model="gpt-4o",  # Or get from config
                 )
+                
+                # Auto-title new sessions after first message exchange
+                if is_new_session:
+                    pool = await get_db_pool()
+                    chat_repo = ChatRepository(pool)
+                    await chat_repo.auto_title_session(user_id, db_session_id)
+                    logger.debug(f"Auto-titled new session {db_session_id}")
+                    
             except Exception as e:
                 logger.error(f"Failed to persist assistant message: {e}")
         
@@ -210,14 +279,16 @@ async def get_chat_history(
     """
     Get the chat history for the current user.
     
-    If session_id is provided, returns history from that specific session.
-    Otherwise returns the most recent session's history.
+    Uses a tiered storage approach:
+    1. Try Redis cache first (fast, for hot data)
+    2. Fall back to PostgreSQL (authoritative)
+    3. Fall back to in-memory (legacy)
     
-    Falls back to in-memory history if no database session exists.
+    Also syncs the in-memory agent with history for context consistency.
     """
     user_id = current_user.user_id
     
-    # Try database first if user has user_id
+    # Try cache/database if user has user_id
     if user_id:
         try:
             pool = await get_db_pool()
@@ -234,15 +305,38 @@ async def get_chat_history(
                     # No sessions yet
                     return ChatHistoryResponse(messages=[], session_id=None)
             
-            # Get messages from database
-            messages = await chat_repo.get_session_messages(
-                user_id=user_id,
-                session_id=db_session_id,
-                limit=100,
-            )
+            messages = None
+            
+            # Try cache first
+            cache = get_chat_cache()
+            if cache.is_enabled:
+                cached_messages = await cache.get_session_messages(user_id, db_session_id)
+                if cached_messages:
+                    messages = cached_messages
+                    logger.debug(f"Cache hit: {len(messages)} messages for session {db_session_id}")
+            
+            # Fall back to database on cache miss
+            if messages is None:
+                messages = await chat_repo.get_session_messages(
+                    user_id=user_id,
+                    session_id=db_session_id,
+                    limit=100,
+                )
+                
+                # Warm the cache for next time
+                if messages and cache.is_enabled:
+                    await cache.warm_cache(user_id, db_session_id, messages)
+                    logger.debug(f"Cache warmed with {len(messages)} messages")
+            
+            # Sync in-memory agent with history for context consistency
+            if messages:
+                agent = get_or_create_session(current_user.email, user_id)
+                history = [{"role": m["role"], "content": m["content"]} for m in messages]
+                agent.set_history(history)
+                logger.debug(f"Synced {len(messages)} messages to agent for {current_user.email}")
             
             return ChatHistoryResponse(
-                messages=[ChatMessage(role=m["role"], content=m["content"]) for m in messages],
+                messages=[ChatMessage(role=m["role"], content=m["content"]) for m in (messages or [])],
                 session_id=str(db_session_id),
             )
             
@@ -320,8 +414,11 @@ async def clear_chat_history(
     
     If session_id is provided, clears that specific session.
     Otherwise clears the most recent active session.
+    
+    Clears from all storage tiers: cache, database, and in-memory.
     """
     user_id = current_user.user_id
+    db_session_id = None
     
     # Clear from database if applicable
     if user_id:
@@ -335,11 +432,16 @@ async def clear_chat_history(
                 sessions = await chat_repo.get_user_sessions(user_id, limit=1)
                 if sessions:
                     db_session_id = sessions[0]["id"]
-                else:
-                    db_session_id = None
             
             if db_session_id:
+                # Clear from database
                 await chat_repo.delete_session_messages(user_id, db_session_id)
+                
+                # Invalidate cache
+                cache = get_chat_cache()
+                if cache.is_enabled:
+                    await cache.invalidate_session(user_id, db_session_id)
+                    logger.debug(f"Invalidated cache for session {db_session_id}")
                 
         except Exception as e:
             logger.error(f"Failed to clear database history: {e}")

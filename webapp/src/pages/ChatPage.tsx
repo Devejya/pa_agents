@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import ChatMessage from '../components/ChatMessage';
-import { sendMessage, type ChatMessage as ChatMessageType } from '../services/api';
+import { sendMessage, getChatHistory, setChatHistory, clearChatHistory, type ChatMessage as ChatMessageType } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const STORAGE_KEY = 'yennifer_chat_history';
@@ -16,28 +16,78 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<(ChatMessageType & { timestamp?: string })[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load chat history from localStorage on mount
+  // Load chat history - server first, then localStorage fallback
+  // This enables cross-device persistence
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
+    async function loadHistory() {
+      setIsLoadingHistory(true);
+      
       try {
-        const parsed = JSON.parse(saved);
-        setMessages(parsed);
-      } catch (e) {
-        console.error('Failed to parse chat history:', e);
+        // Try to fetch from server (database-backed, cross-device)
+        const serverHistory = await getChatHistory();
+        
+        if (serverHistory && serverHistory.length > 0) {
+          // Server has history - use it (add timestamps for display)
+          const messagesWithTimestamps = serverHistory.map(msg => ({
+            ...msg,
+            timestamp: undefined, // Server messages don't have timestamps stored
+          }));
+          setMessages(messagesWithTimestamps);
+          
+          // Clear localStorage since server is now source of truth
+          localStorage.removeItem(storageKey);
+          console.log(`Loaded ${serverHistory.length} messages from server`);
+        } else {
+          // Server has no history - check localStorage for migration
+          const saved = localStorage.getItem(storageKey);
+          if (saved) {
+            try {
+              const localHistory = JSON.parse(saved);
+              if (localHistory.length > 0) {
+                setMessages(localHistory);
+                
+                // Migrate localStorage to server
+                const toMigrate: ChatMessageType[] = localHistory.map((m: ChatMessageType & { timestamp?: string }) => ({
+                  role: m.role,
+                  content: m.content,
+                }));
+                await setChatHistory(toMigrate);
+                console.log(`Migrated ${localHistory.length} messages from localStorage to server`);
+                
+                // Clear localStorage after successful migration
+                localStorage.removeItem(storageKey);
+              }
+            } catch (e) {
+              console.error('Failed to parse/migrate local chat history:', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch chat history from server:', error);
+        
+        // Fallback to localStorage on server error
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          try {
+            setMessages(JSON.parse(saved));
+          } catch (e) {
+            console.error('Failed to parse local chat history:', e);
+          }
+        }
+      } finally {
+        setIsLoadingHistory(false);
       }
     }
+    
+    loadHistory();
   }, [storageKey]);
 
-  // Save chat history to localStorage when it changes
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem(storageKey, JSON.stringify(messages));
-    }
-  }, [messages, storageKey]);
+  // Note: We no longer save to localStorage - server is the source of truth
+  // Messages are persisted to the server in real-time via sendMessage API
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -87,10 +137,18 @@ export default function ChatPage() {
     }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (confirm('Are you sure you want to clear the chat history?')) {
       setMessages([]);
       localStorage.removeItem(storageKey);
+      
+      // Clear from server as well
+      try {
+        await clearChatHistory();
+        console.log('Chat history cleared from server');
+      } catch (error) {
+        console.error('Failed to clear chat history from server:', error);
+      }
     }
   };
 
@@ -146,7 +204,17 @@ export default function ChatPage() {
 
           {/* Messages */}
           <div className="space-y-4 sm:space-y-6">
-            {messages.length === 0 ? (
+            {isLoadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-gray-500">
+                  <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-sm">Loading conversation...</span>
+                </div>
+              </div>
+            ) : messages.length === 0 ? (
               <ChatMessage
                 role="assistant"
                 content="Hello! I'm Yennifer, your personal assistant. How can I help you today?"
