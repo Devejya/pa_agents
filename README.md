@@ -1,183 +1,454 @@
 # Yennifer - AI Executive Assistant
 
-A waitlist landing page for Yennifer, an AI-powered executive assistant service targeting high-net-worth individuals.
+An AI-powered executive assistant that integrates with Google Workspace to help manage emails, calendar, contacts, documents, and more.
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                  NGINX (Port 443)                               │
+│                         yennifer.ai / www.yennifer.ai                           │
+└───────────┬──────────────────────┬──────────────────────┬───────────────────────┘
+            │                      │                      │
+    ┌───────▼────────┐    ┌───────▼────────┐    ┌───────▼────────┐
+    │   Webapp SPA   │    │  Yennifer API  │    │  User Network  │
+    │  (Static Files)│    │   (Port 8000)  │    │   (Port 8001)  │
+    │                │    │                │    │                │
+    │   React/Vite   │    │   FastAPI      │    │   FastAPI      │
+    │   Tailwind CSS │    │   Python 3.x   │    │   Python 3.x   │
+    └────────────────┘    └───────┬────────┘    └───────┬────────┘
+                                  │                      │
+                                  │                      │
+                    ┌─────────────▼──────────────────────▼─────────────┐
+                    │                PostgreSQL (AWS RDS)              │
+                    │                                                  │
+                    │  ┌─────────────────┐  ┌──────────────────────┐   │
+                    │  │  yennifer_chat  │  │    user_network      │   │
+                    │  │  - users        │  │    - persons         │   │
+                    │  │  - chat_*       │  │    - relationships   │   │
+                    │  │  - memories     │  │    - audit_logs      │   │
+                    │  │  - interests    │  └──────────────────────┘   │
+                    │  │  - tasks        │                             │
+                    │  │  - oauth_tokens │                             │
+                    │  └─────────────────┘                             │
+                    └──────────────────────────────────────────────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │    External Services      │
+                    │  - OpenAI API (GPT-4o)    │
+                    │  - Google Workspace APIs  │
+                    │  - AWS KMS (Encryption)   │
+                    └───────────────────────────┘
+```
 
 ## Project Structure
 
 ```
 pa_agents/
-├── frontend/          # React + TypeScript + Vite
-│   ├── src/
-│   │   ├── components/   # Reusable UI components
-│   │   ├── pages/        # Page components (Home, Checkout)
-│   │   ├── hooks/        # Custom React hooks
-│   │   ├── services/     # API service layer
-│   │   ├── data/         # Static data (tier information)
-│   │   └── types/        # TypeScript type definitions
-│   └── public/           # Static assets
-├── backend/           # Node.js + Express API
+├── webapp/                  # React + TypeScript + Vite + Tailwind
 │   └── src/
-│       ├── config/       # Database configuration
-│       ├── routes/       # API routes
-│       └── scripts/      # Database initialization
-├── deploy/            # Deployment scripts and configs
-└── SECRETS/           # SSH keys (gitignored)
+│       ├── components/      # UI components (Layout, Sidebar, Chat, etc.)
+│       ├── contexts/        # React contexts (AuthContext)
+│       ├── pages/           # Page components (Chat, Contacts, Tasks, etc.)
+│       └── services/        # API client layer
+│
+├── services/
+│   ├── yennifer_api/        # Main AI Assistant API (FastAPI)
+│   │   └── app/
+│   │       ├── core/        # Agent, auth, encryption, scheduler
+│   │       ├── db/          # Database connections, repositories
+│   │       ├── jobs/        # Background jobs (sync, archival)
+│   │       ├── routes/      # API endpoints
+│   │       └── tools/       # Google Workspace integrations
+│   │
+│   └── user_network/        # Relationship Graph Service (FastAPI)
+│       └── src/
+│           ├── api/         # API routes (persons, relationships)
+│           ├── core/        # Config, security
+│           └── db/          # Schema, repository, migrations
+│
+├── agent/                   # Standalone CLI agent (legacy)
+├── frontend/                # Waitlist landing page (legacy)
+├── backend/                 # Waitlist API (Node.js, legacy)
+├── deploy/                  # Deployment scripts and configs
+│   ├── deploy.sh            # Deployment script
+│   ├── ecosystem.config.cjs # PM2 configuration
+│   └── nginx.conf           # Nginx reverse proxy config
+└── SECRETS/                 # OAuth credentials (gitignored)
 ```
+
+## Services
+
+### 1. Yennifer Chat API (`yennifer_api`)
+
+The core AI assistant service powered by GPT-4o.
+
+**Port:** 8000
+
+**Features:**
+- Natural language conversation with context awareness
+- Google Workspace integration (Gmail, Calendar, Drive, Docs, Sheets, Slides)
+- Per-user encrypted data storage (memories, interests, tasks, dates)
+- Background job scheduler for sync operations
+- Audit logging for compliance
+
+**API Routes:**
+
+| Prefix | Description |
+|--------|-------------|
+| `/api/v1/auth` | Google OAuth authentication |
+| `/api/v1/chat` | Conversational AI chat |
+| `/api/v1/workspace` | Google Workspace tools |
+| `/api/v1/contacts` | Contact management |
+| `/api/v1/user-data` | User preferences & memories |
+| `/api/v1/jobs` | Background job management |
+
+### 2. User Network Service (`user_network`)
+
+Microservice for managing user relationship graphs.
+
+**Port:** 8001
+
+**Features:**
+- Person management with full-text search
+- Relationship tracking (family, friends, work, acquaintance)
+- Connection frequency tracking (calls, texts, meetings)
+- Interest matching between persons
+
+**API Routes:**
+
+| Prefix | Description |
+|--------|-------------|
+| `/api/v1/persons` | Person CRUD operations |
+| `/api/v1/relationships` | Relationship management |
+| `/api/v1/queries` | Graph queries |
+| `/api/v1/sync` | Sync with external services |
+
+### 3. Webapp (React SPA)
+
+Single-page application for interacting with Yennifer.
+
+**Features:**
+- Chat interface with the AI assistant
+- Contact directory with relationship info
+- Tasks, reminders, and upcoming events views
+- Mobile-responsive design (iPhone, iPad, Android)
+- Google OAuth login
+
+**Pages:**
+- `/` - Chat (main interface)
+- `/contacts` - Contact directory
+- `/tasks` - Task management
+- `/reminders` - Important dates & reminders
+- `/upcoming` - Upcoming events
+- `/reports` - Reports & summaries
+
+### 4. Legacy Services
+
+- **frontend/** - Waitlist landing page (React + Vite)
+- **backend/** - Signup API (Node.js + Express)
+- **agent/** - Standalone CLI agent for testing
 
 ## Tech Stack
 
-- **Frontend**: React 18, TypeScript, Vite, CSS Modules
-- **Backend**: Node.js, Express, TypeScript
-- **Database**: PostgreSQL (AWS RDS)
-- **Analytics**: PostHog
-- **Hosting**: AWS EC2 + Nginx
-- **SSL**: Let's Encrypt (Certbot)
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS |
+| **Backend** | FastAPI (Python 3.10+), Pydantic |
+| **AI/LLM** | OpenAI GPT-4o, LangChain |
+| **Database** | PostgreSQL 15 (AWS RDS) |
+| **Authentication** | Google OAuth 2.0, JWT tokens |
+| **Encryption** | AWS KMS (KEK), Fernet (DEK per user) |
+| **Process Manager** | PM2 |
+| **Reverse Proxy** | Nginx with SSL (Let's Encrypt) |
+| **Hosting** | AWS EC2 |
+
+## Database Schema
+
+### Yennifer Chat Database
+
+| Table | Description |
+|-------|-------------|
+| `users` | Core user identity with per-user encryption keys |
+| `user_identities` | OAuth provider identities (Google, etc.) |
+| `user_oauth_tokens` | Encrypted Google OAuth tokens |
+| `chat_sessions` | Chat conversation sessions |
+| `chat_messages` | Individual messages (encrypted) |
+| `interests` | User interests and hobbies |
+| `important_dates` | Birthdays, anniversaries, events |
+| `user_tasks` | Scheduled and recurring tasks |
+| `memories` | Facts the agent should remember |
+| `audit_log` | Security audit trail |
+
+### User Network Database
+
+| Table | Description |
+|-------|-------------|
+| `persons` | People (nodes) with contact info |
+| `relationships` | Connections between people (edges) |
+| `audit_logs` | Graph access audit trail |
+
+**Security Features:**
+- Row-Level Security (RLS) for multi-tenant isolation
+- Per-user encryption keys (DEK wrapped by AWS KMS KEK)
+- OAuth tokens encrypted at rest
+
+## API Endpoints
+
+### Authentication
+
+```
+GET  /api/v1/auth/login            # Initiate Google OAuth
+GET  /api/v1/auth/callback         # OAuth callback handler
+POST /api/v1/auth/logout           # Clear session
+GET  /api/v1/auth/me               # Get current user info
+```
+
+### Chat
+
+```
+POST   /api/v1/chat                # Send message to assistant
+GET    /api/v1/chat/history        # Get chat history
+DELETE /api/v1/chat/history        # Clear chat history
+GET    /api/v1/chat/sessions       # List chat sessions
+```
+
+### Google Workspace
+
+```
+# Calendar
+GET    /api/v1/workspace/calendar/events
+POST   /api/v1/workspace/calendar/events
+PUT    /api/v1/workspace/calendar/events/{id}
+DELETE /api/v1/workspace/calendar/events/{id}
+
+# Gmail
+GET    /api/v1/workspace/gmail/emails
+GET    /api/v1/workspace/gmail/emails/{id}
+POST   /api/v1/workspace/gmail/send
+GET    /api/v1/workspace/gmail/search
+
+# Drive
+GET    /api/v1/workspace/drive/files
+GET    /api/v1/workspace/drive/files/{id}
+GET    /api/v1/workspace/drive/search
+
+# Docs, Sheets, Slides
+GET    /api/v1/workspace/docs/{id}
+GET    /api/v1/workspace/sheets/{id}
+GET    /api/v1/workspace/slides/{id}
+```
+
+### User Data
+
+```
+# Interests
+GET    /api/v1/user-data/interests
+POST   /api/v1/user-data/interests
+PUT    /api/v1/user-data/interests/{id}
+DELETE /api/v1/user-data/interests/{id}
+
+# Important Dates
+GET    /api/v1/user-data/dates
+POST   /api/v1/user-data/dates
+PUT    /api/v1/user-data/dates/{id}
+DELETE /api/v1/user-data/dates/{id}
+
+# Tasks
+GET    /api/v1/user-data/tasks
+POST   /api/v1/user-data/tasks
+PUT    /api/v1/user-data/tasks/{id}
+DELETE /api/v1/user-data/tasks/{id}
+
+# Memories
+GET    /api/v1/user-data/memories
+POST   /api/v1/user-data/memories
+DELETE /api/v1/user-data/memories/{id}
+```
+
+### Contacts (Proxied to User Network)
+
+```
+GET    /api/v1/contacts              # List all contacts
+GET    /api/v1/contacts/core-user    # Get core user
+GET    /api/v1/contacts/{id}         # Get contact by ID
+GET    /api/v1/contacts/search       # Search contacts
+GET    /api/v1/contacts/{id}/relationships  # Get relationships
+```
 
 ## Local Development
 
 ### Prerequisites
 
 - Node.js 20.x
-- npm
+- Python 3.10+
+- PostgreSQL 15+
+- OpenAI API key
+- Google Cloud project with OAuth configured
 
-### Frontend
+### Webapp
 
 ```bash
-cd frontend
+cd webapp
 npm install
 npm run dev
+# Runs at http://localhost:5173
 ```
 
-The frontend runs at `http://localhost:5173`
-
-### Backend
-
-1. Create the environment file:
+### Yennifer API
 
 ```bash
-cd backend
-cp .env.example .env
-# Edit .env with your database credentials
+cd services/yennifer_api
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Create .env file
+cat > .env << EOF
+ENVIRONMENT=development
+OPENAI_API_KEY=sk-your-key
+DATABASE_URL=postgresql://user:pass@localhost:5432/yennifer
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+JWT_SECRET=your-jwt-secret
+EOF
+
+uvicorn app.main:app --reload --port 8000
 ```
 
-2. Install and run:
+### User Network Service
 
 ```bash
-npm install
-npm run dev
+cd services/user_network
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Create .env file
+cat > .env << EOF
+ENVIRONMENT=development
+DATABASE_URL=postgresql://user:pass@localhost:5432/user_network
+EOF
+
+uvicorn src.main:app --reload --port 8001
 ```
 
-The API runs at `http://localhost:3001`
-
-### Initialize Database
+### Database Migrations
 
 ```bash
-cd backend
-npm run db:init
-```
+# Yennifer API migrations
+cd services/yennifer_api
+psql -U postgres -d yennifer -f app/db/migrations/001_user_oauth_tokens.sql
+psql -U postgres -d yennifer -f app/db/migrations/002_users_identity.sql
+# ... run all migrations in order
 
-## Environment Variables
-
-### Frontend (.env)
-
-```
-VITE_PUBLIC_POSTHOG_KEY=your_posthog_key
-VITE_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
-VITE_API_URL=               # Leave empty for same-origin in production
-```
-
-### Backend (.env)
-
-```
-PORT=3001
-NODE_ENV=development
-DB_HOST=your-rds-endpoint.rds.amazonaws.com
-DB_PORT=5432
-DB_NAME=postgres
-DB_USER=postgres
-DB_PASSWORD=your_password
-CORS_ORIGINS=http://localhost:5173,https://yennifer.ai
+# User Network migrations
+cd services/user_network
+psql -U postgres -d user_network -f src/db/schema.sql
+psql -U postgres -d user_network -f src/db/migrations/001_add_sync_support.sql
 ```
 
 ## Deployment
 
-### First-time EC2 Setup
+### Deploy All Services
 
 ```bash
-# SSH into EC2
-ssh -i "./SECRETS/ai_pa_agent_ec2_instance_key_pair.pem" ec2-user@ec2-44-210-105-146.compute-1.amazonaws.com
-
-# Run setup script (uploaded separately or copy contents)
-# This installs Node.js, Nginx, Certbot, PM2
-```
-
-### Deploy Updates
-
-From your local machine:
-
-```bash
-chmod +x deploy/deploy.sh
 ./deploy/deploy.sh
 ```
 
-### SSL Setup (One-time)
-
-After DNS propagation (check with `dig yennifer.ai`):
+### Deploy Individual Services
 
 ```bash
-# SSH into EC2, then:
+./deploy/deploy.sh --webapp      # Deploy webapp only
+./deploy/deploy.sh --chat-api    # Deploy Yennifer API only
+./deploy/deploy.sh --user-network # Deploy User Network only
+```
+
+### EC2 Setup (First Time)
+
+```bash
+# SSH into EC2
+ssh -i "./SECRETS/ai_pa_agent_ec2_instance_key_pair.pem" ec2-user@<ec2-ip>
+
+# Run setup script
+./deploy/setup-ec2.sh
+```
+
+### SSL Setup (First Time)
+
+```bash
+# After DNS propagation
 sudo certbot --nginx -d yennifer.ai -d www.yennifer.ai
 ```
 
-### Manual Deployment Steps
+### PM2 Service Management
 
-If the script doesn't work:
-
-1. Build locally:
    ```bash
-   cd frontend && npm run build
-   cd ../backend && npm run build
-   ```
+pm2 list                    # View all services
+pm2 logs yennifer-chat      # View chat API logs
+pm2 restart yennifer-chat   # Restart chat API
+pm2 restart all             # Restart all services
+```
 
-2. Upload to EC2:
+## Environment Variables
+
+### Yennifer API (`.env`)
+
    ```bash
-   scp -i "./SECRETS/ai_pa_agent_ec2_instance_key_pair.pem" -r frontend/dist backend/dist backend/package.json ec2-user@ec2-44-210-105-146.compute-1.amazonaws.com:/var/www/yennifer/
-   ```
+ENVIRONMENT=production
+PORT=8000
+HOST=127.0.0.1
 
-3. SSH and restart:
+# OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+
+# Database
+DATABASE_URL=postgresql://user:pass@host:5432/yennifer
+
+# Google OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://yennifer.ai/api/v1/auth/callback
+
+# JWT
+JWT_SECRET=...
+JWT_ALGORITHM=HS256
+
+# AWS KMS (for encryption)
+AWS_REGION=us-east-1
+KMS_KEY_ID=...
+
+# CORS
+CORS_ORIGINS=https://yennifer.ai
+```
+
+### User Network (`.env`)
+
    ```bash
-   ssh -i "./SECRETS/ai_pa_agent_ec2_instance_key_pair.pem" ec2-user@ec2-44-210-105-146.compute-1.amazonaws.com
-   cd /var/www/yennifer/backend
-   npm install --omit=dev
-   pm2 restart yennifer-api
-   ```
+ENVIRONMENT=production
+PORT=8001
+HOST=127.0.0.1
+DATABASE_URL=postgresql://user:pass@host:5432/user_network
+CORS_ORIGINS=https://yennifer.ai,http://127.0.0.1:8000
+```
 
-## Database Schema
+## Security
 
-### signups
-
-| Column | Type | Description |
-|--------|------|-------------|
-| event_id | UUID | Primary key |
-| signup_created_at_est | TIMESTAMPTZ | Signup timestamp (EST) |
-| user_email_id | VARCHAR(255) | User's email (unique) |
-| user_tier | INTEGER | Selected tier (1, 2, or 3) |
-
-## Pricing Tiers
-
-1. **Essential** ($150/month): Calendar management, travel arrangements, email prioritization
-2. **Premier** ($230/month): + Adaptive learning, gift suggestions, draft communications
-3. **Private** ($400/month): + Voice calls, incoming call management, priority support
-
-## API Endpoints
-
-- `POST /api/signup` - Submit waitlist signup
-- `GET /api/health` - Health check endpoint
+- **Authentication:** Google OAuth 2.0 with JWT session tokens
+- **Encryption at Rest:** Per-user AES-256 encryption keys wrapped by AWS KMS
+- **Row-Level Security:** PostgreSQL RLS for multi-tenant data isolation
+- **HTTPS:** TLS 1.2+ via Let's Encrypt
+- **Rate Limiting:** Nginx rate limiting (10 req/s burst 10-20)
+- **Audit Logging:** All data access logged for compliance
 
 ## Analytics
 
 PostHog events tracked:
-- `$pageview` - Page views with page name
-- `tier_selected` - When user clicks on a tier
+- `$pageview` - Page views
+- `tier_selected` - Pricing tier selection
 - `waitlist_signup` - Successful signup
-- `waitlist_signup_error` - Failed signup attempt
+
+## License
+
+Proprietary - All rights reserved.
