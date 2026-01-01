@@ -16,6 +16,35 @@
   --safe-area-inset-right: env(safe-area-inset-right);
   --safe-area-inset-bottom: env(safe-area-inset-bottom);
   --safe-area-inset-left: env(safe-area-inset-left);
+  
+  /* Theme colors - Light mode */
+  --bg-primary: #f9fafb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --border-color: #e5e7eb;
+  --border-subtle: #f3f4f6;
+  
+  color-scheme: light;
+}
+
+.dark {
+  color: #e5e7eb;
+  background-color: #0f0f12;
+  
+  /* Theme colors - Dark mode */
+  --bg-primary: #0f0f12;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+  --text-primary: #f9fafb;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #27272a;
+  --border-subtle: #1f1f23;
+  
+  color-scheme: dark;
 }
 
 /* Support viewport-fit for notched devices */
@@ -70,6 +99,19 @@ html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #a0a0a0;
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: #27272a;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
 }
 
 /* Hide scrollbar on mobile for cleaner look */
@@ -132,6 +174,10 @@ html {
 :focus-visible {
   outline: 2px solid #7c3aed;
   outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline-color: #a78bfa;
 }
 
 /* Prevent zoom on input focus on iOS */

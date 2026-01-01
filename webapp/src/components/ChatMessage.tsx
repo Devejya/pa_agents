@@ -17,10 +17,10 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
       {/* Avatar - smaller on mobile */}
       <div
         className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-          isUser ? 'bg-yennifer-100' : 'bg-yennifer-700'
+          isUser ? 'bg-yennifer-100 dark:bg-yennifer-900/50' : 'bg-yennifer-700'
         }`}
       >
-        <span className={`text-xs sm:text-sm font-bold ${isUser ? 'text-yennifer-700' : 'text-white'}`}>
+        <span className={`text-xs sm:text-sm font-bold ${isUser ? 'text-yennifer-700 dark:text-yennifer-300' : 'text-white'}`}>
           {isUser ? 'U' : 'Y'}
         </span>
       </div>
@@ -30,8 +30,8 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
         <div
           className={`inline-block px-3 py-2 sm:px-4 sm:py-3 rounded-2xl ${
             isUser
-              ? 'bg-gray-100 text-gray-900 rounded-tr-md'
-              : 'bg-yennifer-50 border border-yennifer-200 text-yennifer-900 rounded-tl-md'
+              ? 'bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100 rounded-tr-md'
+              : 'bg-yennifer-50 dark:bg-yennifer-950/50 border border-yennifer-200 dark:border-yennifer-800/50 text-yennifer-900 dark:text-yennifer-100 rounded-tl-md'
           }`}
         >
           {isThinking ? (
@@ -39,7 +39,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
           ) : isUser ? (
             <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">{content}</div>
           ) : (
-            <div className="prose prose-sm max-w-none prose-yennifer break-words">
+            <div className="prose prose-sm max-w-none prose-yennifer dark:prose-invert break-words">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -47,7 +47,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   a: ({ ...props }) => (
                     <a
                       {...props}
-                      className="text-yennifer-600 hover:text-yennifer-800 underline break-all"
+                      className="text-yennifer-600 dark:text-yennifer-400 hover:text-yennifer-800 dark:hover:text-yennifer-300 underline break-all"
                       target="_blank"
                       rel="noopener noreferrer"
                     />
@@ -57,14 +57,14 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                     const isInline = !className;
                     return isInline ? (
                       <code
-                        className="bg-yennifer-100 text-yennifer-800 px-1 py-0.5 rounded text-xs font-mono break-all"
+                        className="bg-yennifer-100 dark:bg-yennifer-900/50 text-yennifer-800 dark:text-yennifer-200 px-1 py-0.5 rounded text-xs font-mono break-all"
                         {...props}
                       >
                         {children}
                       </code>
                     ) : (
                       <code
-                        className={`block bg-gray-800 text-gray-100 p-2 sm:p-3 rounded-lg text-xs font-mono overflow-x-auto ${className || ''}`}
+                        className={`block bg-gray-800 dark:bg-zinc-950 text-gray-100 p-2 sm:p-3 rounded-lg text-xs font-mono overflow-x-auto ${className || ''}`}
                         {...props}
                       >
                         {children}
@@ -73,7 +73,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   },
                   // Style pre blocks
                   pre: ({ children, ...props }) => (
-                    <pre className="bg-gray-800 rounded-lg overflow-hidden my-2 text-xs sm:text-sm" {...props}>
+                    <pre className="bg-gray-800 dark:bg-zinc-950 rounded-lg overflow-hidden my-2 text-xs sm:text-sm" {...props}>
                       {children}
                     </pre>
                   ),
@@ -106,12 +106,12 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   ),
                   // Style strong/bold
                   strong: ({ children, ...props }) => (
-                    <strong className="font-semibold text-yennifer-800" {...props}>{children}</strong>
+                    <strong className="font-semibold text-yennifer-800 dark:text-yennifer-200" {...props}>{children}</strong>
                   ),
                   // Style blockquotes
                   blockquote: ({ children, ...props }) => (
                     <blockquote 
-                      className="border-l-4 border-yennifer-300 pl-2 sm:pl-3 my-2 italic text-gray-600 text-sm"
+                      className="border-l-4 border-yennifer-300 dark:border-yennifer-700 pl-2 sm:pl-3 my-2 italic text-gray-600 dark:text-gray-400 text-sm"
                       {...props}
                     >
                       {children}
@@ -119,7 +119,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   ),
                   // Style horizontal rules
                   hr: ({ ...props }) => (
-                    <hr className="my-3 border-yennifer-200" {...props} />
+                    <hr className="my-3 border-yennifer-200 dark:border-yennifer-800" {...props} />
                   ),
                 }}
               >
@@ -129,7 +129,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
           )}
         </div>
         {timestamp && (
-          <p className={`text-[10px] sm:text-xs text-gray-400 mt-1 ${isUser ? 'text-right' : ''}`}>
+          <p className={`text-[10px] sm:text-xs text-gray-400 dark:text-gray-500 mt-1 ${isUser ? 'text-right' : ''}`}>
             {timestamp}
           </p>
         )}

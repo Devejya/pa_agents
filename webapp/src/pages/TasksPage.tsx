@@ -40,7 +40,7 @@ function getStatusIcon(status: string) {
   switch (status) {
     case 'completed':
       return (
-        <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center shrink-0">
+        <div className="w-5 h-5 rounded-full bg-green-500 dark:bg-green-600 flex items-center justify-center shrink-0">
           <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
           </svg>
@@ -48,20 +48,20 @@ function getStatusIcon(status: string) {
       );
     case 'in_progress':
       return (
-        <div className="w-5 h-5 rounded-full border-2 border-yennifer-500 flex items-center justify-center shrink-0">
-          <div className="w-2 h-2 rounded-full bg-yennifer-500" />
+        <div className="w-5 h-5 rounded-full border-2 border-yennifer-500 dark:border-yennifer-400 flex items-center justify-center shrink-0">
+          <div className="w-2 h-2 rounded-full bg-yennifer-500 dark:bg-yennifer-400" />
         </div>
       );
     default:
-      return <div className="w-5 h-5 rounded-full border-2 border-gray-300 shrink-0" />;
+      return <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-zinc-600 shrink-0" />;
   }
 }
 
 function getPriorityBadge(priority: string) {
   const colors = {
-    high: 'bg-red-100 text-red-700 border-red-200',
-    medium: 'bg-amber-100 text-amber-700 border-amber-200',
-    low: 'bg-gray-100 text-gray-600 border-gray-200',
+    high: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50',
+    medium: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/50',
+    low: 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-zinc-700',
   };
   return colors[priority as keyof typeof colors] || colors.low;
 }
@@ -70,16 +70,16 @@ export default function TasksPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header - hidden on mobile since Layout shows a header */}
-      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
-        <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Yennifer's Tasks</h1>
+      <header className="hidden md:flex bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+        <h1 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-gray-100">Yennifer's Tasks</h1>
         <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-sm font-bold">U</span>
         </div>
       </header>
 
       {/* Mobile sub-header */}
-      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Tasks</h1>
+      <div className="md:hidden bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Tasks</h1>
         <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-xs font-bold">U</span>
         </div>
@@ -90,17 +90,17 @@ export default function TasksPage() {
         <div className="max-w-4xl mx-auto">
           {/* Page title */}
           <div className="flex items-center gap-2 sm:gap-3 mb-2">
-            <TasksIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700" />
-            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Yennifer's Tasks</h2>
+            <TasksIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700 dark:text-gray-300" />
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Yennifer's Tasks</h2>
           </div>
-          <p className="text-gray-500 text-sm sm:text-base mb-4 sm:mb-6">Active tasks and projects I'm managing for you</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm sm:text-base mb-4 sm:mb-6">Active tasks and projects I'm managing for you</p>
 
           {/* Tasks list */}
           <div className="space-y-3 sm:space-y-4">
             {mockTasks.map((task) => (
               <div
                 key={task.id}
-                className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-3 sm:p-5 hover:shadow-md dark:hover:shadow-zinc-900/50 transition-shadow"
               >
                 <div className="flex items-start justify-between gap-3 sm:gap-4">
                   <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
@@ -108,9 +108,9 @@ export default function TasksPage() {
                       {getStatusIcon(task.status)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{task.title}</h3>
-                      <p className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-2">{task.description}</p>
-                      <div className="flex items-center gap-2 mt-2 sm:mt-3 text-xs sm:text-sm text-gray-500">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm sm:text-base">{task.title}</h3>
+                      <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{task.description}</p>
+                      <div className="flex items-center gap-2 mt-2 sm:mt-3 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                         <ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         <span>Due: {task.dueDate}</span>
                       </div>
@@ -129,7 +129,7 @@ export default function TasksPage() {
       </div>
 
       {/* Help button */}
-      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
+      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>

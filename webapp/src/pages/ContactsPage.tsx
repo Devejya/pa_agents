@@ -26,16 +26,16 @@ export default function ContactsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header - hidden on mobile since Layout shows a header */}
-      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
-        <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Contacts</h1>
+      <header className="hidden md:flex bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+        <h1 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-gray-100">Contacts</h1>
         <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-sm font-bold">U</span>
         </div>
       </header>
 
       {/* Mobile sub-header */}
-      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Contacts</h1>
+      <div className="md:hidden bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Contacts</h1>
         <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-xs font-bold">U</span>
         </div>
@@ -46,29 +46,29 @@ export default function ContactsPage() {
         <div className="max-w-6xl mx-auto">
           {/* Page title */}
           <div className="flex items-center gap-2 sm:gap-3 mb-2">
-            <ContactsIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700" />
-            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Contacts</h2>
+            <ContactsIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700 dark:text-gray-300" />
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Contacts</h2>
           </div>
-          <p className="text-gray-500 text-sm sm:text-base mb-4 sm:mb-6">People in your network managed by Yennifer</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm sm:text-base mb-4 sm:mb-6">People in your network managed by Yennifer</p>
 
           {/* Loading state */}
           {loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yennifer-700"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yennifer-700 dark:border-yennifer-400"></div>
             </div>
           )}
 
           {/* Error state */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 text-red-700 text-sm">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-lg p-3 sm:p-4 text-red-700 dark:text-red-400 text-sm">
               {error}
             </div>
           )}
 
           {/* Empty state */}
           {!loading && !error && contacts.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <ContactsIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <ContactsIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
               <p className="text-sm sm:text-base">No contacts found</p>
               <p className="text-xs sm:text-sm mt-1">Ask Yennifer to discover contacts from your emails</p>
             </div>
@@ -98,7 +98,7 @@ export default function ContactsPage() {
       )}
 
       {/* Help button */}
-      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
+      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>
@@ -114,13 +114,13 @@ function ContactDetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-zinc-900 rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-6 border-b border-gray-100">
+        <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-zinc-800">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yennifer-600 rounded-full flex items-center justify-center shrink-0">
@@ -129,15 +129,15 @@ function ContactDetailModal({
                 </span>
               </div>
               <div className="min-w-0">
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{contact.name}</h2>
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{contact.name}</h2>
                 {contact.relationship && (
-                  <p className="text-gray-500 capitalize text-sm sm:text-base">{contact.relationship}</p>
+                  <p className="text-gray-500 dark:text-gray-400 capitalize text-sm sm:text-base">{contact.relationship}</p>
                 )}
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors p-1 shrink-0"
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1 shrink-0"
             >
               <CloseIcon className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
@@ -148,7 +148,7 @@ function ContactDetailModal({
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* Contact info */}
           <section>
-            <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
+            <h3 className="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
               Contact Information
             </h3>
             <div className="space-y-2 sm:space-y-3">
@@ -175,7 +175,7 @@ function ContactDetailModal({
                       <InfoRow icon={<PhoneIcon />} label="Work Phone" value={contact.work_cell} />
                     )}
                     {!hasRealContact && (
-                      <div className="text-rose-500 text-xs sm:text-sm italic flex items-center gap-2">
+                      <div className="text-rose-500 dark:text-rose-400 text-xs sm:text-sm italic flex items-center gap-2">
                         <WarningIcon />
                         No contact information on file. Ask Yennifer to add it.
                       </div>
@@ -189,7 +189,7 @@ function ContactDetailModal({
           {/* Work info */}
           {(contact.company || contact.latest_title) && (
             <section>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
                 Professional
               </h3>
               <div className="space-y-2 sm:space-y-3">
@@ -206,7 +206,7 @@ function ContactDetailModal({
           {/* Location */}
           {(contact.city || contact.country) && (
             <section>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
                 Location
               </h3>
               <InfoRow
@@ -220,14 +220,14 @@ function ContactDetailModal({
           {/* Interests */}
           {contact.interests && contact.interests.length > 0 && (
             <section>
-              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2 sm:mb-3">
+              <h3 className="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
                 Interests
               </h3>
               <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 {contact.interests.map((interest) => (
                   <span
                     key={interest.id}
-                    className="px-2 sm:px-3 py-0.5 sm:py-1 bg-yennifer-50 text-yennifer-700 rounded-full text-xs sm:text-sm capitalize"
+                    className="px-2 sm:px-3 py-0.5 sm:py-1 bg-yennifer-50 dark:bg-yennifer-900/30 text-yennifer-700 dark:text-yennifer-400 rounded-full text-xs sm:text-sm capitalize"
                   >
                     {interest.name}
                   </span>
@@ -252,10 +252,10 @@ function InfoRow({
 }) {
   return (
     <div className="flex items-start gap-2 sm:gap-3">
-      <div className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0 mt-0.5">{icon}</div>
+      <div className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5">{icon}</div>
       <div className="min-w-0">
-        <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-gray-900 text-sm sm:text-base break-words">{value}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+        <p className="text-gray-900 dark:text-gray-100 text-sm sm:text-base break-words">{value}</p>
       </div>
     </div>
   );

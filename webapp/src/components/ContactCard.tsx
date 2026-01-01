@@ -47,7 +47,7 @@ export default function ContactCard({ contact, onClick }: ContactCardProps) {
   return (
     <div
       onClick={onClick}
-      className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 hover:shadow-md hover:border-yennifer-300 transition-all cursor-pointer active:bg-gray-50"
+      className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-3 sm:p-5 hover:shadow-md dark:hover:shadow-zinc-900/50 hover:border-yennifer-300 dark:hover:border-yennifer-700 transition-all cursor-pointer active:bg-gray-50 dark:active:bg-zinc-800"
     >
       <div className="flex items-start gap-3 sm:gap-4">
         {/* Avatar */}
@@ -59,12 +59,12 @@ export default function ContactCard({ contact, onClick }: ContactCardProps) {
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-gray-900 truncate text-sm sm:text-base">{contact.name}</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate text-sm sm:text-base">{contact.name}</h3>
           {contact.relationship && (
-            <p className="text-xs sm:text-sm text-gray-500 capitalize">{contact.relationship}</p>
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 capitalize">{contact.relationship}</p>
           )}
           {contact.latest_title && contact.company && (
-            <p className="text-xs sm:text-sm text-gray-500 truncate">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">
               {contact.latest_title} at {contact.company}
             </p>
           )}
@@ -74,31 +74,31 @@ export default function ContactCard({ contact, onClick }: ContactCardProps) {
       {/* Contact info */}
       <div className="mt-3 sm:mt-4 space-y-1.5 sm:space-y-2">
         {email && !isPlaceholderEmail && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
-            <MailIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 shrink-0" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+            <MailIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 dark:text-gray-500 shrink-0" />
             <span className="truncate">{email}</span>
           </div>
         )}
         {isPlaceholderEmail && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-rose-500">
-            <MailIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 shrink-0" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-rose-500 dark:text-rose-400">
+            <MailIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 dark:text-rose-500 shrink-0" />
             <span className="italic">No email on file</span>
           </div>
         )}
         {phone && !isPlaceholderPhone && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600">
-            <PhoneIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 shrink-0" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+            <PhoneIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400 dark:text-gray-500 shrink-0" />
             <span>{phone}</span>
           </div>
         )}
         {isPlaceholderPhone && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-rose-500">
-            <PhoneIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 shrink-0" />
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-rose-500 dark:text-rose-400">
+            <PhoneIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 dark:text-rose-500 shrink-0" />
             <span className="italic">No phone on file</span>
           </div>
         )}
         {!email && !phone && !isPlaceholderPhone && !isPlaceholderEmail && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-400 italic">
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-400 dark:text-gray-500 italic">
             No contact info
           </div>
         )}

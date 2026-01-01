@@ -42,9 +42,9 @@ const mockReminders = [
 
 function getPriorityBadge(priority: string) {
   const styles: Record<string, string> = {
-    urgent: 'bg-red-100 text-red-700 border-red-200',
-    normal: 'bg-blue-100 text-blue-700 border-blue-200',
-    low: 'bg-gray-100 text-gray-600 border-gray-200',
+    urgent: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50',
+    normal: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50',
+    low: 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-zinc-700',
   };
   return styles[priority] || styles.normal;
 }
@@ -52,14 +52,14 @@ function getPriorityBadge(priority: string) {
 function getReminderIcon(_icon: string, priority: string) {
   if (priority === 'urgent') {
     return (
-      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-        <AlertIcon className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+        <AlertIcon className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400" />
       </div>
     );
   }
   return (
-    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-yennifer-100 flex items-center justify-center shrink-0">
-      <BellIcon className="w-4 h-4 sm:w-5 sm:h-5 text-yennifer-600" />
+    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-yennifer-100 dark:bg-yennifer-900/30 flex items-center justify-center shrink-0">
+      <BellIcon className="w-4 h-4 sm:w-5 sm:h-5 text-yennifer-600 dark:text-yennifer-400" />
     </div>
   );
 }
@@ -68,16 +68,16 @@ export default function RemindersPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header - hidden on mobile since Layout shows a header */}
-      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
-        <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Reminders</h1>
+      <header className="hidden md:flex bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+        <h1 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-gray-100">Reminders</h1>
         <div className="w-8 h-8 lg:w-9 lg:h-9 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-sm font-bold">U</span>
         </div>
       </header>
 
       {/* Mobile sub-header */}
-      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Reminders</h1>
+      <div className="md:hidden bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Reminders</h1>
         <div className="w-7 h-7 bg-yennifer-600 rounded-full flex items-center justify-center">
           <span className="text-white text-xs font-bold">U</span>
         </div>
@@ -88,31 +88,31 @@ export default function RemindersPage() {
         <div className="max-w-4xl mx-auto">
           {/* Page title */}
           <div className="flex items-center gap-2 sm:gap-3 mb-2">
-            <BellOutlineIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700" />
-            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">Reminders</h2>
+            <BellOutlineIcon className="w-5 h-5 sm:w-7 sm:h-7 text-gray-700 dark:text-gray-300" />
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-gray-100">Reminders</h2>
           </div>
-          <p className="text-gray-500 text-sm sm:text-base mb-4 sm:mb-6">Scheduled reminders and recurring tasks managed by Yennifer</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm sm:text-base mb-4 sm:mb-6">Scheduled reminders and recurring tasks managed by Yennifer</p>
 
           {/* Reminders list */}
           <div className="space-y-3 sm:space-y-4">
             {mockReminders.map((reminder) => (
               <div
                 key={reminder.id}
-                className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-3 sm:p-5 hover:shadow-md dark:hover:shadow-zinc-900/50 transition-shadow"
               >
                 <div className="flex items-start gap-3 sm:gap-4">
                   {getReminderIcon(reminder.icon, reminder.priority)}
                   
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{reminder.title}</h3>
-                    <p className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-2">{reminder.description}</p>
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm sm:text-base">{reminder.title}</h3>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{reminder.description}</p>
                     
                     <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2 sm:mt-3">
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-500">
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                         <ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         <span>{reminder.time}</span>
                       </div>
-                      <span className="px-2 py-0.5 bg-yennifer-100 text-yennifer-700 rounded text-xs font-medium">
+                      <span className="px-2 py-0.5 bg-yennifer-100 dark:bg-yennifer-900/30 text-yennifer-700 dark:text-yennifer-400 rounded text-xs font-medium">
                         {reminder.frequency}
                       </span>
                     </div>
@@ -129,7 +129,7 @@ export default function RemindersPage() {
       </div>
 
       {/* Help button */}
-      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
+      <button className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>

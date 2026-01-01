@@ -155,14 +155,14 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header - hidden on mobile since Layout shows a header */}
-      <header className="hidden md:flex bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
+      <header className="hidden md:flex bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 lg:px-6 py-3 lg:py-4 items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg lg:text-xl font-semibold text-gray-900">Chat with Yennifer</h1>
+          <h1 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-gray-100">Chat with Yennifer</h1>
         </div>
         <div className="flex items-center gap-3 lg:gap-4">
           <button
             onClick={handleClearHistory}
-            className="text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 whitespace-nowrap"
           >
             Clear history
           </button>
@@ -173,12 +173,12 @@ export default function ChatPage() {
       </header>
 
       {/* Mobile sub-header */}
-      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Chat</h1>
+      <div className="md:hidden bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 px-4 py-2 flex items-center justify-between shrink-0">
+        <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">Chat</h1>
         <div className="flex items-center gap-3">
           <button
             onClick={handleClearHistory}
-            className="text-xs text-gray-500 hover:text-gray-700"
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           >
             Clear
           </button>
@@ -192,13 +192,13 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-4xl mx-auto px-3 py-4 sm:px-4 sm:py-5 md:p-6">
           {/* Assistant header - compact on mobile */}
-          <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 pb-3 sm:pb-4 border-b border-gray-100 dark:border-zinc-800">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-yennifer-700 rounded-full flex items-center justify-center shrink-0">
               <span className="text-white font-bold text-sm sm:text-base">Y</span>
             </div>
             <div className="min-w-0">
-              <h2 className="font-semibold text-gray-900 text-sm sm:text-base">Yennifer</h2>
-              <p className="text-xs sm:text-sm text-gray-500 truncate">Your AI Executive Assistant</p>
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm sm:text-base">Yennifer</h2>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">Your AI Executive Assistant</p>
             </div>
           </div>
 
@@ -206,7 +206,7 @@ export default function ChatPage() {
           <div className="space-y-4 sm:space-y-6">
             {isLoadingHistory ? (
               <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-gray-500">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                   <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -242,7 +242,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input area */}
-      <div className="bg-white border-t border-gray-200 p-3 sm:p-4 shrink-0">
+      <div className="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 p-3 sm:p-4 shrink-0">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3">
             <input
@@ -252,7 +252,7 @@ export default function ChatPage() {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask Yennifer anything..."
               disabled={isThinking}
-              className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+              className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 rounded-full focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 dark:disabled:bg-zinc-900 disabled:text-gray-500 dark:disabled:text-gray-500"
             />
             <button
               type="submit"
@@ -266,7 +266,7 @@ export default function ChatPage() {
       </div>
 
       {/* Help button (floating) - adjusted position for mobile */}
-      <button className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 transition-colors z-30 text-sm sm:text-base">
+      <button className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>

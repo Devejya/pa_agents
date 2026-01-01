@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import ThemeToggle from './ThemeToggle';
 
 const navItems = [
   { path: '/chat', label: 'Chat with Yennifer', icon: ChatIcon },
@@ -30,27 +31,27 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
   };
 
   return (
-    <aside className="w-72 max-w-[85vw] bg-white border-r border-gray-200 flex flex-col h-screen">
+    <aside className="w-72 max-w-[85vw] bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col h-screen">
       {/* Logo/Brand */}
-      <div className="p-4 sm:p-6 border-b border-gray-100">
+      <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-zinc-800">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yennifer-700 rounded-full flex items-center justify-center shrink-0">
               <span className="text-white text-lg sm:text-xl font-bold">Y</span>
             </div>
             <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-semibold text-gray-900 truncate">Yennifer</h1>
-              <p className="text-xs sm:text-sm text-gray-500 truncate">Your AI executive assistant</p>
+              <h1 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">Yennifer</h1>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">Your AI executive assistant</p>
             </div>
           </div>
           {/* Close button for mobile */}
           {isMobile && (
             <button
               onClick={onClose}
-              className="p-2 -mr-2 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+              className="p-2 -mr-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
               aria-label="Close menu"
             >
-              <CloseIcon className="w-5 h-5 text-gray-500" />
+              <CloseIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
           )}
         </div>
@@ -67,7 +68,7 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
               `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg transition-colors ${
                 isActive
                   ? 'bg-yennifer-700 text-white'
-                  : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800 active:bg-gray-200 dark:active:bg-zinc-700'
               }`
             }
           >
@@ -77,10 +78,14 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
         ))}
       </nav>
 
-      {/* User info and logout */}
-      <div className="p-3 sm:p-4 border-t border-gray-100">
+      {/* Theme toggle and User info */}
+      <div className="p-3 sm:p-4 border-t border-gray-100 dark:border-zinc-800 space-y-3">
+        {/* Theme toggle */}
+        <ThemeToggle />
+        
+        {/* User info */}
         {user && (
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3">
             {user.picture ? (
               <img
                 src={user.picture}
@@ -95,14 +100,14 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
             </div>
           </div>
         )}
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 active:bg-gray-200 rounded-lg transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-zinc-800 active:bg-gray-200 dark:active:bg-zinc-700 rounded-lg transition-colors"
         >
           <LogoutIcon className="w-4 h-4" />
           Sign out
