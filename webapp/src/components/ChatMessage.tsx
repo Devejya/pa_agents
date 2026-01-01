@@ -31,7 +31,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
           className={`inline-block px-3 py-2 sm:px-4 sm:py-3 rounded-2xl ${
             isUser
               ? 'bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100 rounded-tr-md'
-              : 'bg-yennifer-50 dark:bg-yennifer-950/50 border border-yennifer-200 dark:border-yennifer-800/50 text-yennifer-900 dark:text-yennifer-100 rounded-tl-md'
+              : 'bg-yennifer-50 dark:bg-zinc-800 border border-yennifer-200 dark:border-zinc-700 text-gray-900 dark:text-gray-100 rounded-tl-md'
           }`}
         >
           {isThinking ? (
@@ -39,7 +39,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
           ) : isUser ? (
             <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">{content}</div>
           ) : (
-            <div className="prose prose-sm max-w-none prose-yennifer dark:prose-invert break-words">
+            <div className="prose prose-sm max-w-none dark:prose-invert break-words text-gray-900 dark:text-gray-100">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -57,7 +57,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                     const isInline = !className;
                     return isInline ? (
                       <code
-                        className="bg-yennifer-100 dark:bg-yennifer-900/50 text-yennifer-800 dark:text-yennifer-200 px-1 py-0.5 rounded text-xs font-mono break-all"
+                        className="bg-yennifer-100 dark:bg-zinc-700 text-yennifer-800 dark:text-gray-100 px-1 py-0.5 rounded text-xs font-mono break-all"
                         {...props}
                       >
                         {children}
@@ -79,39 +79,39 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   ),
                   // Style lists
                   ul: ({ children, ...props }) => (
-                    <ul className="list-disc list-inside space-y-1 my-2 text-sm" {...props}>
+                    <ul className="list-disc list-inside space-y-1 my-2 text-sm text-gray-900 dark:text-gray-100" {...props}>
                       {children}
                     </ul>
                   ),
                   ol: ({ children, ...props }) => (
-                    <ol className="list-decimal list-inside space-y-1 my-2 text-sm" {...props}>
+                    <ol className="list-decimal list-inside space-y-1 my-2 text-sm text-gray-900 dark:text-gray-100" {...props}>
                       {children}
                     </ol>
                   ),
                   // Style paragraphs
                   p: ({ children, ...props }) => (
-                    <p className="my-1 leading-relaxed text-sm" {...props}>
+                    <p className="my-1 leading-relaxed text-sm text-gray-900 dark:text-gray-100" {...props}>
                       {children}
                     </p>
                   ),
                   // Style headings
                   h1: ({ children, ...props }) => (
-                    <h1 className="text-base sm:text-lg font-bold mt-3 mb-1" {...props}>{children}</h1>
+                    <h1 className="text-base sm:text-lg font-bold mt-3 mb-1 text-gray-900 dark:text-gray-100" {...props}>{children}</h1>
                   ),
                   h2: ({ children, ...props }) => (
-                    <h2 className="text-sm sm:text-base font-bold mt-2 mb-1" {...props}>{children}</h2>
+                    <h2 className="text-sm sm:text-base font-bold mt-2 mb-1 text-gray-900 dark:text-gray-100" {...props}>{children}</h2>
                   ),
                   h3: ({ children, ...props }) => (
-                    <h3 className="text-sm font-bold mt-2 mb-1" {...props}>{children}</h3>
+                    <h3 className="text-sm font-bold mt-2 mb-1 text-gray-900 dark:text-gray-100" {...props}>{children}</h3>
                   ),
                   // Style strong/bold
                   strong: ({ children, ...props }) => (
-                    <strong className="font-semibold text-yennifer-800 dark:text-yennifer-200" {...props}>{children}</strong>
+                    <strong className="font-semibold text-gray-900 dark:text-white" {...props}>{children}</strong>
                   ),
                   // Style blockquotes
                   blockquote: ({ children, ...props }) => (
                     <blockquote 
-                      className="border-l-4 border-yennifer-300 dark:border-yennifer-700 pl-2 sm:pl-3 my-2 italic text-gray-600 dark:text-gray-400 text-sm"
+                      className="border-l-4 border-yennifer-300 dark:border-zinc-600 pl-2 sm:pl-3 my-2 italic text-gray-600 dark:text-gray-300 text-sm"
                       {...props}
                     >
                       {children}
@@ -119,7 +119,7 @@ export default function ChatMessage({ role, content, isThinking, timestamp }: Ch
                   ),
                   // Style horizontal rules
                   hr: ({ ...props }) => (
-                    <hr className="my-3 border-yennifer-200 dark:border-yennifer-800" {...props} />
+                    <hr className="my-3 border-gray-200 dark:border-zinc-700" {...props} />
                   ),
                 }}
               >
