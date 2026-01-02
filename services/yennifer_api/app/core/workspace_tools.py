@@ -449,15 +449,13 @@ def list_drive_files(max_results: int = 20) -> str:
     if not files:
         return "No files found in Drive."
     
-    result = f"Recent files in Drive:\n"
-    for f in files:
-        result += f"\n- **{f['name']}**\n"
-        result += f"  Type: {f['mime_type']}\n"
-        result += f"  Modified: {f['modified_time']}\n"
+    result = "Recent files in Drive:\n\n"
+    for i, f in enumerate(files, 1):
+        link = f.get('web_link') or f"ID: {f['id']}"
         if f.get('web_link'):
-            result += f"  Link: {f['web_link']}\n"
+            result += f"{i}. **[{f['name']}]({link})** ({f['mime_type']})\n"
         else:
-            result += f"  ID: {f['id']}\n"
+            result += f"{i}. **{f['name']}** ({f['mime_type']}) - {link}\n"
     return result
 
 
@@ -479,10 +477,9 @@ def search_drive(query: str) -> str:
     if not files:
         return f"No files found matching: {query}"
     
-    result = f"Files matching '{query}':\n"
-    for f in files:
-        result += f"\n- **{f['name']}**\n"
-        result += f"  Link: {f['web_link']}\n"
+    result = f"Files matching '{query}':\n\n"
+    for i, f in enumerate(files, 1):
+        result += f"{i}. **[{f['name']}]({f['web_link']})**\n"
     return result
 
 
@@ -674,11 +671,10 @@ def list_spreadsheets() -> str:
     if not sheets:
         return "No spreadsheets found."
     
-    result = "Your spreadsheets:\n"
-    for s in sheets:
-        result += f"\n- **{s['name']}**\n"
+    result = "Your spreadsheets:\n\n"
+    for i, s in enumerate(sheets, 1):
         link = s.get('web_link') or f"https://docs.google.com/spreadsheets/d/{s['id']}"
-        result += f"  Link: {link}\n"
+        result += f"{i}. **[{s['name']}]({link})**\n"
     return result
 
 
@@ -704,12 +700,10 @@ def search_spreadsheets(search_term: str) -> str:
     if not sheets:
         return f"No spreadsheets found matching '{search_term}'. Try list_spreadsheets to see all available spreadsheets."
     
-    result = f"Spreadsheets matching '{search_term}':\n"
-    for s in sheets:
-        result += f"\n- **{s['name']}**\n"
+    result = f"Spreadsheets matching '{search_term}':\n\n"
+    for i, s in enumerate(sheets, 1):
         link = s.get('web_link') or f"https://docs.google.com/spreadsheets/d/{s['id']}"
-        result += f"  Link: {link}\n"
-        result += f"  ID: {s['id']}\n"
+        result += f"{i}. **[{s['name']}]({link})** (ID: `{s['id']}`)\n"
     
     result += "\n💡 Use the ID above with read_spreadsheet_data to access the spreadsheet."
     return result
@@ -792,11 +786,10 @@ def list_google_docs() -> str:
     if not docs:
         return "No documents found."
     
-    result = "Your documents:\n"
-    for d in docs:
-        result += f"\n- **{d['name']}**\n"
+    result = "Your documents:\n\n"
+    for i, d in enumerate(docs, 1):
         link = d.get('web_link') or f"https://docs.google.com/document/d/{d['id']}"
-        result += f"  Link: {link}\n"
+        result += f"{i}. **[{d['name']}]({link})**\n"
     return result
 
 
@@ -897,11 +890,10 @@ def list_presentations() -> str:
     if not slides:
         return "No presentations found."
     
-    result = "Your presentations:\n"
-    for s in slides:
-        result += f"\n- **{s['name']}**\n"
+    result = "Your presentations:\n\n"
+    for i, s in enumerate(slides, 1):
         link = s.get('web_link') or f"https://docs.google.com/presentation/d/{s['id']}"
-        result += f"  Link: {link}\n"
+        result += f"{i}. **[{s['name']}]({link})**\n"
     return result
 
 
