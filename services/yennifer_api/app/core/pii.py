@@ -1,13 +1,15 @@
 """
 PII (Personally Identifiable Information) Masking Module
 
-Provides tool-level masking of sensitive data before it reaches the LLM.
+Provides comprehensive PII masking at the LLM boundary.
 
 Architecture:
-- Masking happens at tool OUTPUT, not input
-- Different masking modes for different tool purposes
-- Per-request context tracks masked items for potential resolution
-- Action tools resolve IDs internally, not masked placeholders
+- Masking happens at ALL LLM entry points:
+  1. User input (HumanMessage)
+  2. Chat history (from DB or in-memory)
+  3. Tool outputs (already implemented)
+- Per-request context tracks masked items for unmasking responses
+- Unmasking happens before returning response to user
 
 Masking Modes:
 - FULL: Mask all PII (emails, phones, SSN, cards, accounts, addresses)
@@ -187,18 +189,48 @@ class PIIContext:
     
     Tracks all masked items within a single request lifecycle.
     Allows resolution of tracked items for action tools.
+    
+    Uses OPAQUE placeholders ([MASKED_N]) to avoid triggering LLM safety filters.
+    The PII type is tracked internally for audit/statistics but NOT exposed in placeholders.
     """
     
     def __init__(self):
         self._mappings: Dict[str, MaskedItem] = {}
-        self._counters: Dict[PIIType, int] = {}
+        self._counters: Dict[PIIType, int] = {}  # Type counts for statistics
         self._total_masked: int = 0
+        self._opaque_counter: int = 0  # Global counter for [MASKED_N]
+        self._value_to_placeholder: Dict[str, str] = {}  # Dedup: same value = same placeholder
     
-    def _next_placeholder(self, pii_type: PIIType) -> str:
-        """Generate next placeholder for a PII type."""
+    def _next_placeholder(self, pii_type: PIIType, original_value: str) -> str:
+        """
+        Generate next OPAQUE placeholder.
+        
+        Uses [MASKED_N] format to avoid revealing PII type to LLM.
+        Same original value always gets the same placeholder (deduplication).
+        
+        Args:
+            pii_type: The type of PII (for internal tracking only)
+            original_value: The original PII value
+            
+        Returns:
+            Opaque placeholder like [MASKED_1], [MASKED_2], etc.
+        """
+        # Check if this value was already masked (deduplication)
+        if original_value in self._value_to_placeholder:
+            return self._value_to_placeholder[original_value]
+        
+        # Generate new opaque placeholder
+        self._opaque_counter += 1
+        placeholder = f"[MASKED_{self._opaque_counter}]"
+        
+        # Track for deduplication
+        self._value_to_placeholder[original_value] = placeholder
+        
+        # Update type counter for statistics
         count = self._counters.get(pii_type, 0) + 1
         self._counters[pii_type] = count
-        return f"[{pii_type.value}_{count}]"
+        
+        return placeholder
     
     def mask_and_track(
         self,
@@ -248,21 +280,24 @@ class PIIContext:
                     if original.startswith('[') and original.endswith(']'):
                         continue
                     
-                    placeholder = self._next_placeholder(pii_type)
+                    # Get opaque placeholder (handles deduplication)
+                    placeholder = self._next_placeholder(pii_type, original)
                     
-                    # Create masked item record
-                    item = MaskedItem(
-                        pii_type=pii_type,
-                        placeholder=placeholder,
-                        original_value=original,
-                    )
-                    items_masked.append(item)
+                    # Only create new record if this is a new placeholder
+                    if placeholder not in self._mappings:
+                        # Create masked item record
+                        item = MaskedItem(
+                            pii_type=pii_type,
+                            placeholder=placeholder,
+                            original_value=original,
+                        )
+                        items_masked.append(item)
+                        
+                        # Store mapping for potential resolution
+                        self._mappings[placeholder] = item
+                        self._total_masked += 1
                     
-                    # Store mapping for potential resolution
-                    self._mappings[placeholder] = item
-                    self._total_masked += 1
-                    
-                    # Replace in text
+                    # Replace in text (always replace, even for deduped values)
                     result_text = result_text.replace(original, placeholder, 1)
         
         return PIIMaskingResult(masked_text=result_text, items_masked=items_masked)
@@ -450,8 +485,12 @@ def unmask_pii(text: str) -> str:
     Call this on the final response before returning to user.
     The user should see the real PII - only the LLM should be masked.
     
+    Handles both:
+    - New opaque format: [MASKED_1], [MASKED_2], etc.
+    - Legacy typed format: [SSN_1], [CARD_1], etc. (for backwards compatibility)
+    
     Args:
-        text: Text with PII placeholders (e.g., "Your card is [CARD_1]")
+        text: Text with PII placeholders (e.g., "Your info is [MASKED_1]")
         
     Returns:
         Text with original PII values restored
@@ -466,16 +505,175 @@ def unmask_pii(text: str) -> str:
     ctx = get_pii_context()
     result = text
     
-    # Find all placeholders and replace with original values
-    import re
-    placeholder_pattern = re.compile(r'\[([A-Z_]+)_(\d+)\]')
-    
-    for match in placeholder_pattern.finditer(text):
-        placeholder = match.group(0)  # e.g., "[CARD_1]"
+    # Pattern 1: New opaque format [MASKED_N]
+    opaque_pattern = re.compile(r'\[MASKED_(\d+)\]')
+    for match in opaque_pattern.finditer(text):
+        placeholder = match.group(0)  # e.g., "[MASKED_1]"
         original = ctx.resolve(placeholder)
         if original:
             result = result.replace(placeholder, original)
-            logger.debug(f"Unmasked {placeholder}")
+            logger.debug(f"Unmasked opaque {placeholder}")
+    
+    # Pattern 2: Legacy typed format [TYPE_N] (backwards compatibility)
+    legacy_pattern = re.compile(r'\[([A-Z_]+)_(\d+)\]')
+    for match in legacy_pattern.finditer(result):  # Note: use 'result' to avoid re-matching opaque
+        placeholder = match.group(0)
+        # Skip if it's an opaque placeholder (already handled)
+        if placeholder.startswith("[MASKED_"):
+            continue
+        original = ctx.resolve(placeholder)
+        if original:
+            result = result.replace(placeholder, original)
+            logger.debug(f"Unmasked legacy {placeholder}")
     
     return result
+
+
+# =============================================================================
+# LLM Boundary Functions - Mask all content before it reaches the LLM
+# =============================================================================
+
+# Sensitive keywords that trigger LLM safety filters
+# These are replaced with neutral terms to avoid refusals
+# Format: (pattern, replacement, restore_term)
+SENSITIVE_KEYWORDS = [
+    # Social Insurance Number (Canadian)
+    (re.compile(r'\bSIN\b', re.IGNORECASE), 'reference number', 'SIN'),
+    (re.compile(r'\bSocial Insurance Number\b', re.IGNORECASE), 'reference number', 'Social Insurance Number'),
+    (re.compile(r'\bSocial Insurance\b', re.IGNORECASE), 'reference', 'Social Insurance'),
+    
+    # Social Security Number (US)
+    (re.compile(r'\bSSN\b', re.IGNORECASE), 'reference number', 'SSN'),
+    (re.compile(r'\bSocial Security Number\b', re.IGNORECASE), 'reference number', 'Social Security Number'),
+    (re.compile(r'\bSocial Security\b', re.IGNORECASE), 'reference', 'Social Security'),
+    
+    # Credit card terminology
+    (re.compile(r'\bcredit card number\b', re.IGNORECASE), 'payment reference', 'credit card number'),
+    (re.compile(r'\bcard number\b', re.IGNORECASE), 'payment reference', 'card number'),
+    (re.compile(r'\bdebit card number\b', re.IGNORECASE), 'payment reference', 'debit card number'),
+    
+    # Bank account
+    (re.compile(r'\bbank account number\b', re.IGNORECASE), 'account reference', 'bank account number'),
+    (re.compile(r'\baccount number\b', re.IGNORECASE), 'account reference', 'account number'),
+    (re.compile(r'\brouting number\b', re.IGNORECASE), 'routing reference', 'routing number'),
+]
+
+
+def _mask_sensitive_keywords(text: str) -> tuple[str, Dict[str, str]]:
+    """
+    Replace sensitive keywords with neutral terms.
+    
+    This prevents LLM safety filters from triggering on semantic context
+    even when the actual PII data is already masked.
+    
+    Returns:
+        Tuple of (masked_text, keyword_mappings) where keyword_mappings
+        tracks what was replaced for potential restoration.
+    """
+    result = text
+    keyword_mappings = {}
+    
+    for pattern, replacement, original_term in SENSITIVE_KEYWORDS:
+        matches = list(pattern.finditer(result))
+        for match in matches:
+            matched_text = match.group(0)
+            # Track for potential restoration (case-preserved)
+            keyword_mappings[replacement] = matched_text
+            result = result[:match.start()] + replacement + result[match.end():]
+            # Re-find matches since positions changed
+            break  # Process one at a time to handle position shifts
+    
+    # Multiple passes to catch all instances
+    changed = True
+    while changed:
+        changed = False
+        for pattern, replacement, original_term in SENSITIVE_KEYWORDS:
+            if pattern.search(result):
+                result = pattern.sub(replacement, result, count=1)
+                changed = True
+                break
+    
+    return result, keyword_mappings
+
+
+def mask_message_for_llm(content: str, role: str = "user") -> str:
+    """
+    Mask PII in a message before sending to LLM.
+    
+    This is the primary entry point for LLM-bound content.
+    Use this to mask user input, chat history messages, etc.
+    
+    Two-stage masking:
+    1. Mask PII data (SSN, cards, etc.) → [MASKED_N] placeholders
+    2. Mask sensitive keywords (SIN, SSN, etc.) → neutral terms
+    
+    This prevents LLM safety filters from triggering on BOTH:
+    - The actual sensitive data
+    - The semantic context/terminology
+    
+    Args:
+        content: Message content to mask
+        role: Message role ('user', 'assistant', 'tool') - currently all use FULL mode
+              but role is preserved for potential future mode differentiation
+        
+    Returns:
+        Masked content safe for LLM (uses opaque [MASKED_N] placeholders
+        and neutral terminology)
+        
+    Example:
+        >>> mask_message_for_llm("My SIN is 123-45-6789")
+        "My reference number is [MASKED_1]"
+    """
+    if not content:
+        return content
+    
+    # Stage 1: Mask PII data with opaque placeholders
+    result = mask_pii(content, mode=MaskingMode.FULL)
+    
+    # Stage 2: Mask sensitive keywords to avoid semantic triggers
+    result, _ = _mask_sensitive_keywords(result)
+    
+    return result
+
+
+def mask_tool_call_args(tool_calls: Optional[List[Dict]]) -> Optional[List[Dict]]:
+    """
+    Mask PII in tool call arguments.
+    
+    Tool calls from chat history may contain PII that the LLM decided to use
+    (e.g., "send_email(to='user@example.com')").
+    
+    We mask these so that:
+    1. The LLM sees consistent masked values across the conversation
+    2. Tool implementations can resolve placeholders if needed
+    
+    Args:
+        tool_calls: List of tool call dicts with 'name', 'args', 'id'
+        
+    Returns:
+        Tool calls with masked arguments, or None if input was None
+    """
+    if not tool_calls:
+        return tool_calls
+    
+    masked_calls = []
+    for tc in tool_calls:
+        masked_tc = {
+            "name": tc.get("name"),
+            "id": tc.get("id"),
+            "args": {},
+        }
+        
+        # Mask string arguments
+        args = tc.get("args", {})
+        if args:
+            for key, value in args.items():
+                if isinstance(value, str):
+                    masked_tc["args"][key] = mask_pii(value, mode=MaskingMode.FULL)
+                else:
+                    masked_tc["args"][key] = value
+        
+        masked_calls.append(masked_tc)
+    
+    return masked_calls
 

@@ -21,6 +21,7 @@ from .entity_resolution_tools import (
     COSTLY_ACTIONS,
 )
 from .config import get_settings
+from .pii import mask_message_for_llm, mask_tool_call_args
 
 
 SYSTEM_PROMPT = """You are Yennifer, an AI executive assistant. You help users manage their:
@@ -311,15 +312,64 @@ class YenniferAssistant:
         if self.user_id:
             self._user_context = await build_user_context(self.user_id)
     
+    def _mask_chat_history(self) -> list:
+        """
+        Mask PII in chat history before sending to LLM.
+        
+        This ensures that previous messages (which may contain PII
+        from user input or tool results) are masked before the LLM sees them.
+        
+        Returns:
+            List of LangChain message objects with masked content
+        """
+        masked_messages = []
+        
+        for msg in self.chat_history:
+            if isinstance(msg, HumanMessage):
+                # Mask user messages
+                masked_content = mask_message_for_llm(msg.content, role="user")
+                masked_messages.append(HumanMessage(content=masked_content))
+                
+            elif isinstance(msg, AIMessage):
+                # Mask assistant messages (may echo PII back)
+                masked_content = mask_message_for_llm(msg.content or "", role="assistant")
+                masked_msg = AIMessage(content=masked_content)
+                
+                # Also mask tool_calls arguments if present
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    masked_msg.tool_calls = mask_tool_call_args(msg.tool_calls)
+                
+                masked_messages.append(masked_msg)
+                
+            elif isinstance(msg, ToolMessage):
+                # Mask tool results (should already be masked by tools, but re-check for history)
+                masked_content = mask_message_for_llm(msg.content, role="tool")
+                masked_messages.append(ToolMessage(
+                    content=masked_content,
+                    tool_call_id=msg.tool_call_id,
+                ))
+            
+            else:
+                # SystemMessage or unknown - pass through
+                masked_messages.append(msg)
+        
+        return masked_messages
+    
     def chat(self, message: str) -> str:
         """
         Send a message to the assistant and get a response.
         
+        PII Masking:
+        - User input is masked before sending to LLM
+        - Chat history is masked before sending to LLM
+        - Tool results are masked at tool level (already implemented)
+        - Response may contain placeholders (caller should unmask for user)
+        
         Args:
-            message: User's message/request
+            message: User's message/request (may contain PII)
             
         Returns:
-            Assistant's response
+            Assistant's response (may contain PII placeholders like [SSN_1])
         """
         if not self.user_email:
             return "I need to know who you are first. Please log in."
@@ -330,15 +380,28 @@ class YenniferAssistant:
             set_memory_user(self.user_id)
             set_entity_resolution_user(str(self.user_id))
         
+        # =========================================================
+        # PII MASKING: Mask user input BEFORE building messages
+        # This prevents raw PII from reaching the LLM
+        # Uses OPAQUE placeholders [MASKED_N] to avoid safety filter triggers
+        # =========================================================
+        masked_message = mask_message_for_llm(message, role="user")
+        
         # Build system prompt with user context
         full_system_prompt = SYSTEM_PROMPT
         if self._user_context:
             full_system_prompt += "\n" + self._user_context
         
-        # Build messages with system prompt and history
+        # Build messages with system prompt and MASKED history
         messages = [SystemMessage(content=full_system_prompt)]
-        messages.extend(self.chat_history)
-        messages.append(HumanMessage(content=message))
+        
+        # =========================================================
+        # PII MASKING: Mask chat history before sending to LLM
+        # =========================================================
+        messages.extend(self._mask_chat_history())
+        
+        # Add the MASKED user message
+        messages.append(HumanMessage(content=masked_message))
         
         # Trim messages to fit within token budget
         # This removes older messages while preserving the system prompt and recent context
@@ -370,9 +433,12 @@ class YenniferAssistant:
                 # No terminal message found - use fallback if available
                 assistant_response = fallback_response or "I apologize, I couldn't process that request. Could you try again?"
             
-            # Update chat history with full turn (including tool calls and results)
-            # This preserves context for follow-up questions like "what was in that email?"
-            self.chat_history.append(HumanMessage(content=message))
+            # =========================================================
+            # IMPORTANT: Store ORIGINAL (unmasked) message in history
+            # The history is for context when restored from DB.
+            # It will be re-masked via _mask_chat_history() on next LLM call.
+            # =========================================================
+            self.chat_history.append(HumanMessage(content=message))  # Original, not masked
             
             # Add all new messages generated by the agent (tool calls, tool results, final response)
             # These are the messages after the ones we passed in
