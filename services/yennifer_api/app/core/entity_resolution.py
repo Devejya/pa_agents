@@ -566,20 +566,31 @@ def create_person_with_data(
                     'user', data.relationship_to_user, category, initial_strength
                 ))
             
-            # Save interests (properly encrypted)
-            interests_saved = 0
-            interests_to_save = data.get_interests_list()
-            if interests_to_save:
-                # Get user's DEK for encryption
+            # Initialize encryption variables (used across multiple blocks below)
+            user_dek = None
+            encryption = None
+            
+            # Helper to lazily fetch user DEK for encryption
+            def _ensure_user_dek():
+                nonlocal user_dek, encryption
+                if user_dek is not None:
+                    return True
                 cur.execute(
                     "SELECT encryption_key_blob FROM users WHERE id = %s",
                     (user_id,)
                 )
-                user_row = cur.fetchone()
-                if user_row and user_row['encryption_key_blob']:
+                dek_row = cur.fetchone()
+                if dek_row and dek_row['encryption_key_blob']:
                     encryption = get_encryption()
-                    user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
-                    
+                    user_dek = encryption.decrypt_user_dek(bytes(dek_row['encryption_key_blob']))
+                    return True
+                return False
+            
+            # Save interests (properly encrypted)
+            interests_saved = 0
+            interests_to_save = data.get_interests_list()
+            if interests_to_save:
+                if _ensure_user_dek():
                     for interest_name in interests_to_save:
                         details = {"name": interest_name}
                         details_encrypted = encryption.encrypt_for_user(user_dek, json.dumps(details))
@@ -593,18 +604,7 @@ def create_person_with_data(
             
             # Save birthday if provided (encrypted)
             if data.birthday_date:
-                # Need user_dek for encryption - get it if not already fetched
-                if 'user_dek' not in locals():
-                    cur.execute(
-                        "SELECT encryption_key_blob FROM users WHERE id = %s",
-                        (user_id,)
-                    )
-                    user_row = cur.fetchone()
-                    if user_row and user_row['encryption_key_blob']:
-                        encryption = get_encryption()
-                        user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
-                
-                if 'user_dek' in locals():
+                if _ensure_user_dek():
                     title_encrypted = encryption.encrypt_for_user(user_dek, 'Birthday')
                     cur.execute("""
                         INSERT INTO important_dates (
@@ -617,18 +617,7 @@ def create_person_with_data(
             
             # Save other important date if provided (encrypted)
             if data.important_date:
-                # Need user_dek for encryption - get it if not already fetched
-                if 'user_dek' not in locals():
-                    cur.execute(
-                        "SELECT encryption_key_blob FROM users WHERE id = %s",
-                        (user_id,)
-                    )
-                    user_row = cur.fetchone()
-                    if user_row and user_row['encryption_key_blob']:
-                        encryption = get_encryption()
-                        user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
-                
-                if 'user_dek' in locals():
+                if _ensure_user_dek():
                     is_recurring = len(data.important_date) == 5  # MM-DD format
                     title_encrypted = encryption.encrypt_for_user(
                         user_dek, 
