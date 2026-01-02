@@ -208,3 +208,31 @@ html {
     opacity: 0.8;
   }
 }
+
+/* Dynamic viewport height utilities */
+.h-dvh {
+  height: 100vh; /* Fallback */
+  height: 100dvh;
+}
+
+/* Safe area padding for bottom (home indicator) */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .sm\:pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Safe area offset for fixed positioned elements */
+.bottom-safe-20 {
+  bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .sm\:bottom-24 {
+    bottom: 6rem;
+  }
+}

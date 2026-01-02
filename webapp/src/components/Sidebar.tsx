@@ -31,7 +31,7 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
   };
 
   return (
-    <aside className="w-72 max-w-[85vw] bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col h-screen h-[100dvh]">
+    <aside className="w-72 max-w-[85vw] bg-white dark:bg-zinc-900 border-r border-gray-200 dark:border-zinc-800 flex flex-col h-dvh">
       {/* Logo/Brand */}
       <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-zinc-800">
         <div className="flex items-center justify-between gap-3">
@@ -79,7 +79,7 @@ export default function Sidebar({ onClose, isMobile }: SidebarProps) {
       </nav>
 
       {/* Theme toggle and User info */}
-      <div className="p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-gray-100 dark:border-zinc-800 space-y-3">
+      <div className="p-3 sm:p-4 pb-safe sm:pb-safe border-t border-gray-100 dark:border-zinc-800 space-y-3">
         {/* Theme toggle */}
         <ThemeToggle />
         
