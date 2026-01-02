@@ -72,3 +72,25 @@ async def close_db() -> None:
         _pool = None
         logger.info("Database connection pool closed")
 
+
+async def set_rls_user(conn, user_id: str) -> None:
+    """
+    Set the current user ID for Row-Level Security policies.
+    
+    This must be called before executing queries on tables with RLS enabled.
+    The RLS policies check `current_setting('app.current_user_id')` to filter
+    rows by owner_user_id.
+    
+    Args:
+        conn: asyncpg connection
+        user_id: User's UUID as string
+    """
+    # Use set_config() which supports parameterized queries (unlike SET LOCAL)
+    # Third parameter 'false' = session-level (persists for entire connection)
+    # IMPORTANT: 'true' would only last for the current transaction, which with
+    # autocommit means just THIS statement - the setting would be gone for the next query!
+    await conn.execute(
+        "SELECT set_config('app.current_user_id', $1, false)",
+        str(user_id)
+    )
+

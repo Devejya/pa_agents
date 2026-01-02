@@ -51,6 +51,9 @@ class UserNetworkClient:
     - Person CRUD operations
     - Sync conflict management
     - Sync logging
+    
+    Important: All operations now require a user_id for Row-Level Security (RLS).
+    The user_id is sent as the X-User-ID header with each request.
     """
     
     def __init__(
@@ -58,6 +61,7 @@ class UserNetworkClient:
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         timeout: float = 30.0,
+        user_id: Optional[str] = None,
     ):
         """
         Initialize the client.
@@ -66,22 +70,44 @@ class UserNetworkClient:
             base_url: User Network API base URL (default: from settings)
             api_key: API key for authentication (default: from settings)
             timeout: Request timeout in seconds
+            user_id: User ID for RLS enforcement (required for most operations)
         """
         settings = get_settings()
         self.base_url = (base_url or settings.user_network_api_url).rstrip('/')
         self.api_key = api_key or settings.user_network_api_key
         self.timeout = timeout
+        self.user_id = user_id
         
         # Validate configuration
         if not self.api_key:
             logger.warning("User Network API key not configured")
     
+    def with_user(self, user_id: str) -> "UserNetworkClient":
+        """
+        Create a new client instance with the specified user_id for RLS.
+        
+        Args:
+            user_id: User ID (UUID string) for RLS enforcement
+            
+        Returns:
+            New UserNetworkClient instance with user_id set
+        """
+        return UserNetworkClient(
+            base_url=self.base_url,
+            api_key=self.api_key,
+            timeout=self.timeout,
+            user_id=user_id,
+        )
+    
     def _get_headers(self) -> dict:
-        """Get headers for API requests."""
-        return {
+        """Get headers for API requests, including X-User-ID for RLS."""
+        headers = {
             "X-API-Key": self.api_key,
             "Content-Type": "application/json",
         }
+        if self.user_id:
+            headers["X-User-ID"] = str(self.user_id)
+        return headers
     
     async def _request(
         self,
@@ -401,9 +427,23 @@ class UserNetworkClient:
     # =========================================================================
     # Person Methods
     # =========================================================================
+    # 
+    # WARNING: These methods bypass Row-Level Security (RLS).
+    # For user-facing endpoints, use PersonsRepository from app.db instead,
+    # which enforces RLS via owner_user_id.
+    #
+    # These methods should ONLY be used by:
+    # - Background sync jobs (contact_sync.py)
+    # - Admin operations
+    # - System-level operations that need cross-tenant access
+    # =========================================================================
     
     async def get_person(self, person_id: str) -> Optional[dict]:
-        """Get a person by ID."""
+        """
+        Get a person by ID.
+        
+        WARNING: Bypasses RLS. For user-facing access, use PersonsRepository.
+        """
         try:
             return await self._request(
                 "GET",
@@ -437,7 +477,11 @@ class UserNetworkClient:
             raise
     
     async def search_persons(self, query: str) -> list[dict]:
-        """Search persons by query."""
+        """
+        Search persons by query.
+        
+        WARNING: Bypasses RLS. For user-facing access, use PersonsRepository.search().
+        """
         return await self._request(
             "GET",
             "/api/v1/persons/search",
@@ -512,7 +556,11 @@ class UserNetworkClient:
     # =========================================================================
     
     async def get_core_user(self) -> Optional[dict]:
-        """Get the core user (main user of the system)."""
+        """
+        Get the core user (main user of the system).
+        
+        WARNING: Bypasses RLS. For user-facing access, use PersonsRepository.get_core_user().
+        """
         try:
             return await self._request(
                 "GET",
@@ -533,7 +581,13 @@ class UserNetworkClient:
         return [core_user] if core_user else []
     
     async def list_persons(self, limit: int = 100, offset: int = 0) -> list[dict]:
-        """List all persons with pagination."""
+        """
+        List all persons with pagination.
+        
+        WARNING: Bypasses RLS - returns ALL persons across ALL users.
+        For user-facing access, use PersonsRepository.list_contacts().
+        Only use this for background sync or admin operations.
+        """
         return await self._request(
             "GET",
             "/api/v1/persons",
@@ -541,7 +595,11 @@ class UserNetworkClient:
         )
     
     async def get_relationships(self, person_id: str) -> list[dict]:
-        """Get relationships for a person."""
+        """
+        Get relationships for a person.
+        
+        WARNING: Bypasses RLS. For user-facing access, use PersonsRepository.get_relationships().
+        """
         try:
             return await self._request(
                 "GET",
@@ -570,9 +628,30 @@ class UserNetworkClient:
 _client: Optional[UserNetworkClient] = None
 
 
-def get_user_network_client() -> UserNetworkClient:
-    """Get the global User Network client instance."""
+def get_user_network_client(user_id: Optional[str] = None) -> UserNetworkClient:
+    """
+    Get the User Network client instance.
+    
+    Args:
+        user_id: Optional user ID for RLS enforcement. If provided, returns
+                 a client configured to send X-User-ID header with requests.
+                 Required for most operations to comply with RLS policies.
+    
+    Returns:
+        UserNetworkClient instance. If user_id is provided, returns a new
+        instance with user context. Otherwise returns the global instance
+        (for backwards compatibility with system-level operations).
+    """
     global _client
+    
+    # If user_id provided, return a client with user context
+    if user_id:
+        if _client is None:
+            _client = UserNetworkClient()
+        return _client.with_user(user_id)
+    
+    # Otherwise return the global client without user context
+    # (for backwards compatibility with admin/system operations)
     if _client is None:
         _client = UserNetworkClient()
     return _client

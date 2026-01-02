@@ -8,16 +8,21 @@ Syncs Google Contacts with the User Network service:
 - Sends notifications on completion/failure
 
 Runs every 30 minutes by default.
+
+Note: All operations go through UserNetworkClient with user_id for RLS enforcement.
 """
 
 import logging
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from ..core.scheduler import register_job
 from ..core.user_network_client import get_user_network_client, UserNetworkAPIError
 from ..core.analytics import track_contact_sync
 from ..routes.auth import get_google_tokens
+from ..db import get_db_pool
+from ..db.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,29 @@ _sync_stats: dict[str, dict] = {}
 
 # Provider name for Google Contacts
 GOOGLE_CONTACTS_PROVIDER = "google_contacts"
+
+
+async def _get_user_id_for_email(user_email: str) -> Optional[str]:
+    """
+    Look up the user_id UUID for a given email address.
+    
+    Args:
+        user_email: User's email address
+        
+    Returns:
+        User ID string (UUID) if found, None otherwise
+    """
+    try:
+        pool = await get_db_pool()
+        user_repo = UserRepository(pool)
+        user = await user_repo.get_user_by_email(user_email)
+        
+        if user and user.get('id'):
+            return str(user['id'])
+        return None
+    except Exception as e:
+        logger.error(f"Failed to look up user_id for {user_email}: {e}")
+        return None
 
 
 @register_job(
@@ -99,29 +127,37 @@ async def get_users_due_for_sync() -> list[str]:
     Returns:
         List of user email addresses
     """
-    client = get_user_network_client()
-    
     try:
-        # Get all core users (users we track)
-        core_users = await client.get_all_core_users()
+        # Get all users from our database
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Get users who have OAuth tokens (i.e., have authenticated)
+            users = await conn.fetch("""
+                SELECT DISTINCT u.id, u.email 
+                FROM users u
+                JOIN user_oauth_tokens t ON u.id = t.user_id
+                WHERE t.provider = 'google'
+            """)
         
-        if not core_users:
-            logger.debug("No core users found")
+        if not users:
+            logger.debug("No users with Google OAuth found")
             return []
         
         users_due = []
         now = datetime.utcnow()
         
-        for user in core_users:
-            user_email = user.get('work_email') or user.get('personal_email')
-            if not user_email:
-                continue
+        for user in users:
+            user_email = user['email']
+            user_id = str(user['id'])
             
-            # Check if user has Google tokens
+            # Check if user has valid Google tokens
             tokens = await get_google_tokens(user_email)
             if not tokens:
-                logger.debug(f"No Google tokens for {user_email}")
+                logger.debug(f"No valid Google tokens for {user_email}")
                 continue
+            
+            # Get client with user context for RLS
+            client = get_user_network_client(user_id=user_id)
             
             # Check sync state
             try:
@@ -155,9 +191,6 @@ async def get_users_due_for_sync() -> list[str]:
         
         return users_due
         
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to get users for sync: {e}")
-        return []
     except Exception as e:
         logger.error(f"Unexpected error getting users for sync: {e}")
         return []
@@ -168,12 +201,13 @@ async def sync_user_contacts(user_email: str) -> dict:
     Sync contacts for a specific user.
     
     Process:
-    1. Mark sync as started in User Network
-    2. Get user's Google OAuth token
-    3. Fetch contacts from Google (using syncToken for incremental)
-    4. Match against existing User Network contacts
-    5. Create/update/flag conflicts
-    6. Update sync state with results
+    1. Look up user_id from email for RLS context
+    2. Mark sync as started in User Network
+    3. Get user's Google OAuth token
+    4. Fetch contacts from Google (using syncToken for incremental)
+    5. Match against existing User Network contacts
+    6. Create/update/flag conflicts
+    7. Update sync state with results
     
     Args:
         user_email: User's email address
@@ -183,7 +217,6 @@ async def sync_user_contacts(user_email: str) -> dict:
     """
     logger.info(f"🔄 Starting contact sync for {user_email}")
     
-    client = get_user_network_client()
     start_time = datetime.utcnow()
     
     result = {
@@ -196,6 +229,17 @@ async def sync_user_contacts(user_email: str) -> dict:
         'errors': [],
         'duration_ms': 0,
     }
+    
+    # Step 0: Look up user_id for RLS enforcement
+    user_id = await _get_user_id_for_email(user_email)
+    if not user_id:
+        result['errors'].append('User not found in database')
+        result['skipped'] = True
+        logger.warning(f"User not found for email {user_email}, skipping sync")
+        return result
+    
+    # Get client with user context for RLS
+    client = get_user_network_client(user_id=user_id)
     
     try:
         # Step 1: Get or create sync state and mark as syncing

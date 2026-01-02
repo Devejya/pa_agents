@@ -218,7 +218,7 @@ function ContactDetailModal({
           )}
 
           {/* Interests */}
-          {contact.interests && contact.interests.length > 0 && (
+          {Array.isArray(contact.interests) && contact.interests.length > 0 && (
             <section>
               <h3 className="text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
                 Interests

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
         env_file=".env" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Ignore extra env vars from shared secrets
     )
 
     @model_validator(mode="before")
@@ -94,7 +95,9 @@ class Settings(BaseSettings):
     database_max_overflow: int = 20
 
     # API Keys (comma-separated list of valid keys)
+    # Also accepts user_network_api_key from shared secrets
     api_keys: str = ""  # e.g., "key1,key2,key3"
+    user_network_api_key: str = ""  # Alternative: single key from shared secrets
 
     # CORS (comma-separated list of allowed origins)
     cors_origins: str = "http://localhost:3000,http://localhost:8000,http://localhost:5173"
@@ -105,10 +108,18 @@ class Settings(BaseSettings):
 
     @property
     def api_keys_list(self) -> list[str]:
-        """Parse comma-separated API keys into list."""
-        if not self.api_keys:
-            return []
-        return [key.strip() for key in self.api_keys.split(",") if key.strip()]
+        """Parse API keys into list. Accepts both api_keys and user_network_api_key."""
+        keys = []
+        
+        # Add keys from comma-separated api_keys
+        if self.api_keys:
+            keys.extend([key.strip() for key in self.api_keys.split(",") if key.strip()])
+        
+        # Add single key from user_network_api_key (used by shared secrets)
+        if self.user_network_api_key and self.user_network_api_key not in keys:
+            keys.append(self.user_network_api_key)
+        
+        return keys
 
     @property
     def cors_origins_list(self) -> list[str]:

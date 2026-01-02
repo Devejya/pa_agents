@@ -7,6 +7,8 @@ Syncs the authenticated user's profile from Gmail data:
 - Creates or updates the core user record in User Network service
 
 Triggered after OAuth callback to initialize user data.
+
+Note: All operations go through UserNetworkClient with user_id for RLS enforcement.
 """
 
 import base64
@@ -17,8 +19,33 @@ from typing import Optional
 
 from ..core.user_network_client import get_user_network_client, UserNetworkAPIError
 from ..routes.auth import get_google_tokens
+from ..db import get_db_pool
+from ..db.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_user_id_for_email(user_email: str) -> Optional[str]:
+    """
+    Look up the user_id UUID for a given email address.
+    
+    Args:
+        user_email: User's email address
+        
+    Returns:
+        User ID string (UUID) if found, None otherwise
+    """
+    try:
+        pool = await get_db_pool()
+        user_repo = UserRepository(pool)
+        user = await user_repo.get_user_by_email(user_email)
+        
+        if user and user.get('id'):
+            return str(user['id'])
+        return None
+    except Exception as e:
+        logger.error(f"Failed to look up user_id for {user_email}: {e}")
+        return None
 
 
 async def sync_core_user_from_gmail(user_email: str) -> dict:
@@ -403,12 +430,19 @@ async def _upsert_core_user(user_email: str, user_data: dict) -> dict:
     Returns:
         Dict with 'created' or 'updated' flag
     """
-    client = get_user_network_client()
-    
     result = {
         'created': False,
         'updated': False,
     }
+    
+    # Look up user_id for RLS enforcement
+    user_id = await _get_user_id_for_email(user_email)
+    if not user_id:
+        logger.error(f"User not found in database for {user_email}")
+        raise ValueError(f"User not found for email: {user_email}")
+    
+    # Get client with user context for RLS
+    client = get_user_network_client(user_id=user_id)
     
     try:
         # Check if core user already exists

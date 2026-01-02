@@ -1,18 +1,18 @@
 """
-Contacts API routes - Proxy to User Network service.
+Contacts API routes with Row-Level Security.
 
-Provides authenticated access to the User Network contacts for the frontend.
+Provides authenticated access to the user's contacts with RLS enforcement.
+All queries are automatically filtered by owner_user_id via PostgreSQL RLS policies.
 """
 
 import logging
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..core.auth import TokenData, get_current_user
 from ..core.audit import get_audit_logger, AuditAction, ResourceType
-from ..core.user_network_client import get_user_network_client, UserNetworkAPIError
+from ..db import get_db_pool, PersonsRepository
 from ..middleware import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -29,30 +29,31 @@ async def list_contacts(
     """
     Get all contacts for the authenticated user.
     
-    Returns list of persons from User Network.
+    RLS automatically filters to only this user's contacts via owner_user_id.
     """
-    client = get_user_network_client()
     audit = get_audit_logger()
     
     try:
-        contacts = await client.list_persons(limit=limit, offset=offset)
+        pool = await get_db_pool()
+        repo = PersonsRepository(pool)
+        
+        # RLS automatically filters to only this user's contacts
+        contacts = await repo.list_contacts(
+            user_id=current_user.user_id,
+            limit=limit,
+            offset=offset
+        )
         
         # Audit log: read contacts list
         await audit.log_data_access(
             user_id=current_user.user_id,
             resource_type=ResourceType.PERSONS,
             action=AuditAction.READ,
-            details={"count": len(contacts) if isinstance(contacts, list) else 0, "limit": limit, "offset": offset},
+            details={"count": len(contacts), "limit": limit, "offset": offset},
             ip_address=get_client_ip(),
         )
         
         return contacts
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to get contacts: {e.message}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message,
-        )
     except Exception as e:
         logger.error(f"Error getting contacts: {e}")
         raise HTTPException(
@@ -66,19 +67,25 @@ async def get_core_user(
     current_user: TokenData = Depends(get_current_user),
 ):
     """
-    Get the core user (the authenticated user's profile in User Network).
-    """
-    client = get_user_network_client()
+    Get the core user (the authenticated user's profile).
     
+    RLS ensures only the user's own core_user record is returned.
+    """
     try:
-        core_user = await client.get_core_user()
+        pool = await get_db_pool()
+        repo = PersonsRepository(pool)
+        
+        core_user = await repo.get_core_user(user_id=current_user.user_id)
+        
+        if not core_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Core user not found",
+            )
+        
         return core_user
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to get core user: {e.message}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message,
-        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting core user: {e}")
         raise HTTPException(
@@ -94,18 +101,19 @@ async def search_contacts(
 ):
     """
     Search contacts by query string.
-    """
-    client = get_user_network_client()
     
+    RLS ensures only the user's own contacts are searched.
+    """
     try:
-        results = await client.search_persons(q)
-        return results
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to search contacts: {e.message}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message,
+        pool = await get_db_pool()
+        repo = PersonsRepository(pool)
+        
+        results = await repo.search(
+            user_id=current_user.user_id,
+            query=q
         )
+        
+        return results
     except Exception as e:
         logger.error(f"Error searching contacts: {e}")
         raise HTTPException(
@@ -121,12 +129,26 @@ async def get_contact(
 ):
     """
     Get a specific contact by ID.
+    
+    RLS ensures only the user's own contacts can be retrieved.
+    Returns 404 if contact doesn't exist or isn't owned by the user.
     """
-    client = get_user_network_client()
     audit = get_audit_logger()
     
     try:
-        contact = await client.get_person(str(contact_id))
+        pool = await get_db_pool()
+        repo = PersonsRepository(pool)
+        
+        contact = await repo.get_contact(
+            user_id=current_user.user_id,
+            contact_id=contact_id
+        )
+        
+        if not contact:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Contact not found",
+            )
         
         # Audit log: read specific contact
         await audit.log_data_access(
@@ -138,12 +160,8 @@ async def get_contact(
         )
         
         return contact
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to get contact {contact_id}: {e.message}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message,
-        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting contact {contact_id}: {e}")
         raise HTTPException(
@@ -159,22 +177,36 @@ async def get_contact_relationships(
 ):
     """
     Get relationships for a specific contact.
-    """
-    client = get_user_network_client()
     
+    RLS ensures only relationships owned by the user are returned.
+    """
     try:
-        relationships = await client.get_relationships(str(contact_id))
-        return relationships
-    except UserNetworkAPIError as e:
-        logger.error(f"Failed to get relationships for {contact_id}: {e.message}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=e.message,
+        pool = await get_db_pool()
+        repo = PersonsRepository(pool)
+        
+        # First verify the contact exists and is owned by the user
+        contact = await repo.get_contact(
+            user_id=current_user.user_id,
+            contact_id=contact_id
         )
+        
+        if not contact:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Contact not found",
+            )
+        
+        relationships = await repo.get_relationships(
+            user_id=current_user.user_id,
+            person_id=contact_id
+        )
+        
+        return relationships
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting relationships for {contact_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve relationships",
         )
-

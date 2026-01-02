@@ -1,10 +1,12 @@
 """
-Query API routes for agent use.
+Query API routes for agent use with Row-Level Security.
 
 These endpoints are optimized for common agent queries like:
 - "What is my sister's phone number?"
 - "What does my mother like?"
 - "Who is my brother's wife?"
+
+All endpoints require X-User-ID header for RLS enforcement.
 """
 
 import json
@@ -12,7 +14,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ..deps import ApiKey, DbPool
+from ..deps import ApiKey, DbPool, UserId
+from ...db.connection import set_rls_user
 from ...db.models import (
     ContactInfo,
     Interest,
@@ -31,12 +34,15 @@ async def get_contact_by_role(
     role: str,
     pool: DbPool,
     api_key: ApiKey,
+    user_id: UserId,
 ) -> list[ContactInfo]:
     """
     Get contact info for core user's relationship by role.
     
     Example: "What is my sister's phone number?"
     Query: /query/contact-by-role?role=sister
+    
+    RLS ensures only the user's own contacts are returned.
     """
     query = """
         SELECT 
@@ -57,6 +63,7 @@ async def get_contact_by_role(
           AND p.status = 'active'
     """
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, role)
         return [
             ContactInfo(
@@ -78,12 +85,15 @@ async def get_interests_by_role(
     role: str,
     pool: DbPool,
     api_key: ApiKey,
+    user_id: UserId,
 ) -> list[PersonInterests]:
     """
     Get interests for core user's relationship by role.
     
     Example: "What does my mother like?"
     Query: /query/interests-by-role?role=mother
+    
+    RLS ensures only the user's own contacts are returned.
     """
     query = """
         SELECT 
@@ -103,6 +113,7 @@ async def get_interests_by_role(
           AND p.status = 'active'
     """
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, role)
         results = []
         for row in rows:
@@ -130,12 +141,15 @@ async def get_contact_by_name(
     name: str,
     pool: DbPool,
     api_key: ApiKey,
+    user_id: UserId,
 ) -> list[ContactInfo]:
     """
     Get contact info for a person by name.
     
     Example: "What is Rachel's phone number?"
     Query: /query/contact-by-name?name=Rachel
+    
+    RLS ensures only the user's own contacts are returned.
     """
     name_lower = name.lower().strip()
     query = """
@@ -155,6 +169,7 @@ async def get_contact_by_name(
           AND p.status = 'active'
     """
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, f"%{name_lower}%", name_lower)
         return [
             ContactInfo(
@@ -176,12 +191,15 @@ async def get_interests_by_name(
     name: str,
     pool: DbPool,
     api_key: ApiKey,
+    user_id: UserId,
 ) -> list[PersonInterests]:
     """
     Get interests for a person by name.
     
     Example: "What does Rajesh like?"
     Query: /query/interests-by-name?name=Rajesh
+    
+    RLS ensures only the user's own contacts are returned.
     """
     name_lower = name.lower().strip()
     query = """
@@ -200,6 +218,7 @@ async def get_interests_by_name(
           AND p.status = 'active'
     """
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, f"%{name_lower}%", name_lower)
         results = []
         for row in rows:
@@ -227,6 +246,7 @@ async def traverse_relationships(
     path: str = Query(..., description="Comma-separated path, e.g., 'sister,husband'"),
     pool: DbPool = None,
     api_key: ApiKey = None,
+    user_id: UserId = None,
 ) -> list[dict]:
     """
     Traverse relationships from core user.
@@ -236,6 +256,8 @@ async def traverse_relationships(
     
     Example: "What are my brother's wife's interests?"
     Query: /query/traverse?path=brother,wife
+    
+    RLS ensures only the user's own relationships are traversed.
     """
     roles = [r.strip().lower() for r in path.split(",") if r.strip()]
     
@@ -343,6 +365,7 @@ async def traverse_relationships(
         params = [roles[0], len(roles)]
     
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, *params)
         results = []
         for row in rows:
@@ -370,6 +393,7 @@ async def traverse_relationships(
 async def get_most_contacted(
     pool: DbPool,
     api_key: ApiKey,
+    user_id: UserId,
     limit: int = 10,
 ) -> list[MostContactedPerson]:
     """
@@ -377,6 +401,8 @@ async def get_most_contacted(
     
     Example: "Who have I talked to most this week?"
     Query: /query/most-contacted?limit=10
+    
+    RLS ensures only the user's own contacts are returned.
     """
     query = """
         SELECT 
@@ -400,6 +426,7 @@ async def get_most_contacted(
         LIMIT $1
     """
     async with pool.acquire() as conn:
+        await set_rls_user(conn, user_id)
         rows = await conn.fetch(query, limit)
         return [
             MostContactedPerson(

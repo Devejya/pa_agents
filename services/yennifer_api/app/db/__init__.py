@@ -9,6 +9,7 @@ from .crypto import encrypt_token, decrypt_token
 from .token_repository import TokenRepository
 from .user_repository import UserRepository
 from .chat_repository import ChatRepository
+from .persons_repository import PersonsRepository
 from .user_data_repository import (
     InterestsRepository,
     ImportantDatesRepository,
@@ -27,6 +28,7 @@ __all__ = [
     "TokenRepository",
     "UserRepository",
     "ChatRepository",
+    "PersonsRepository",
     "InterestsRepository",
     "ImportantDatesRepository",
     "UserTasksRepository",

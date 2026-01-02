@@ -1,5 +1,9 @@
 """
 Repository layer for database operations.
+
+All repository methods that access RLS-protected tables require a user_id parameter.
+The user_id is used to set the PostgreSQL session variable `app.current_user_id`,
+which the RLS policies use to filter rows by owner_user_id.
 """
 
 import json
@@ -10,6 +14,7 @@ from uuid import UUID, uuid4
 
 import asyncpg
 
+from .connection import set_rls_user
 from .models import (
     ConnectionCounts,
     ConflictStatus,
@@ -43,13 +48,19 @@ logger = logging.getLogger(__name__)
 
 
 class PersonRepository:
-    """Repository for person operations."""
+    """Repository for person operations with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def create(self, data: PersonCreate) -> Person:
-        """Create a new person."""
+    async def create(self, data: PersonCreate, user_id: Optional[str] = None) -> Person:
+        """
+        Create a new person.
+        
+        Args:
+            data: Person creation data
+            user_id: User ID for RLS context (required for RLS-protected inserts)
+        """
         person_id = uuid4()
         now = datetime.utcnow()
         
@@ -75,7 +86,7 @@ class PersonRepository:
                 company, latest_title, expertise,
                 address, country, city, state,
                 instagram_handle, religion, ethnicity, country_of_birth, city_of_birth,
-                date_of_birth, interests, created_at, updated_at
+                date_of_birth, interests, created_at, updated_at, owner_user_id
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8,
@@ -83,12 +94,14 @@ class PersonRepository:
                 $14, $15, $16,
                 $17, $18, $19, $20,
                 $21, $22, $23, $24, $25,
-                $26, $27, $28, $29
+                $26, $27, $28, $29, $30
             )
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(
                 query,
                 person_id,
@@ -120,25 +133,47 @@ class PersonRepository:
                 json.dumps([i.model_dump(mode="json") for i in interests]),
                 now,
                 now,
+                UUID(user_id) if user_id else None,
             )
             return self._row_to_person(row)
 
-    async def get_by_id(self, person_id: UUID) -> Optional[Person]:
-        """Get a person by ID."""
+    async def get_by_id(self, person_id: UUID, user_id: Optional[str] = None) -> Optional[Person]:
+        """
+        Get a person by ID.
+        
+        Args:
+            person_id: The person's UUID
+            user_id: User ID for RLS context (filters to only this user's data)
+        """
         query = "SELECT * FROM persons WHERE id = $1"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, person_id)
             return self._row_to_person(row) if row else None
 
-    async def get_core_user(self) -> Optional[Person]:
-        """Get the core user."""
+    async def get_core_user(self, user_id: Optional[str] = None) -> Optional[Person]:
+        """
+        Get the core user.
+        
+        Args:
+            user_id: User ID for RLS context (filters to only this user's core user)
+        """
         query = "SELECT * FROM persons WHERE is_core_user = TRUE LIMIT 1"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query)
             return self._row_to_person(row) if row else None
 
-    async def find_by_name_or_alias(self, query_text: str) -> list[Person]:
-        """Find persons by name or alias."""
+    async def find_by_name_or_alias(self, query_text: str, user_id: Optional[str] = None) -> list[Person]:
+        """
+        Find persons by name or alias.
+        
+        Args:
+            query_text: Name or alias to search for
+            user_id: User ID for RLS context
+        """
         query_lower = query_text.lower().strip()
         query = """
             SELECT * FROM persons 
@@ -153,11 +188,19 @@ class PersonRepository:
             LIMIT 20
         """
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             rows = await conn.fetch(query, query_lower, f"%{query_lower}%")
             return [self._row_to_person(row) for row in rows]
 
-    async def search(self, search_text: str) -> list[Person]:
-        """Full-text search across persons."""
+    async def search(self, search_text: str, user_id: Optional[str] = None) -> list[Person]:
+        """
+        Full-text search across persons.
+        
+        Args:
+            search_text: Text to search for
+            user_id: User ID for RLS context
+        """
         query = """
             SELECT *, ts_rank(search_vector, query) AS rank
             FROM persons, plainto_tsquery('english', $1) query
@@ -166,11 +209,20 @@ class PersonRepository:
             LIMIT 20
         """
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             rows = await conn.fetch(query, search_text)
             return [self._row_to_person(row) for row in rows]
 
-    async def update(self, person_id: UUID, data: PersonUpdate) -> Optional[Person]:
-        """Update a person."""
+    async def update(self, person_id: UUID, data: PersonUpdate, user_id: Optional[str] = None) -> Optional[Person]:
+        """
+        Update a person.
+        
+        Args:
+            person_id: The person's UUID
+            data: Update data
+            user_id: User ID for RLS context
+        """
         # Build dynamic update query
         updates = []
         values = [person_id]
@@ -204,7 +256,7 @@ class PersonRepository:
                 values.append(value)
         
         if not updates:
-            return await self.get_by_id(person_id)
+            return await self.get_by_id(person_id, user_id)
         
         query = f"""
             UPDATE persons 
@@ -214,17 +266,27 @@ class PersonRepository:
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, *values)
             return self._row_to_person(row) if row else None
 
     async def add_interest(
-        self, person_id: UUID, interest_name: str, interest_type: str, level: int
+        self, person_id: UUID, interest_name: str, interest_type: str, level: int,
+        user_id: Optional[str] = None
     ) -> Optional[Person]:
         """
         Atomically add an interest to a person.
         
         Uses PostgreSQL's JSONB concatenation to avoid race conditions
         when multiple interests are added in parallel.
+        
+        Args:
+            person_id: The person's UUID
+            interest_name: Name of the interest
+            interest_type: Type of interest
+            level: Interest level (0-100)
+            user_id: User ID for RLS context
         """
         interest_id = str(uuid4())
         interest_json = json.dumps({
@@ -269,6 +331,8 @@ class PersonRepository:
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(
                 query, 
                 person_id, 
@@ -279,21 +343,38 @@ class PersonRepository:
             )
             return self._row_to_person(row) if row else None
 
-    async def delete(self, person_id: UUID) -> bool:
-        """Delete a person."""
+    async def delete(self, person_id: UUID, user_id: Optional[str] = None) -> bool:
+        """
+        Delete a person.
+        
+        Args:
+            person_id: The person's UUID
+            user_id: User ID for RLS context
+        """
         query = "DELETE FROM persons WHERE id = $1 RETURNING id"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, person_id)
             return row is not None
 
-    async def list_all(self, limit: int = 100, offset: int = 0) -> list[Person]:
-        """List all persons with pagination."""
+    async def list_all(self, limit: int = 100, offset: int = 0, user_id: Optional[str] = None) -> list[Person]:
+        """
+        List all persons with pagination.
+        
+        Args:
+            limit: Maximum number of results
+            offset: Pagination offset
+            user_id: User ID for RLS context
+        """
         query = """
             SELECT * FROM persons 
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
         """
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             rows = await conn.fetch(query, limit, offset)
             return [self._row_to_person(row) for row in rows]
 
@@ -345,13 +426,19 @@ class PersonRepository:
 
 
 class RelationshipRepository:
-    """Repository for relationship operations."""
+    """Repository for relationship operations with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def create(self, data: RelationshipCreate) -> Relationship:
-        """Create a new relationship."""
+    async def create(self, data: RelationshipCreate, user_id: Optional[str] = None) -> Relationship:
+        """
+        Create a new relationship.
+        
+        Args:
+            data: Relationship creation data
+            user_id: User ID for RLS context
+        """
         rel_id = uuid4()
         now = datetime.utcnow()
         connection_counts = ConnectionCounts()
@@ -363,18 +450,20 @@ class RelationshipRepository:
                 connection_counts, similar_interests,
                 first_meeting_date, length_of_relationship_years,
                 length_of_relationship_days,
-                is_active, created_at, updated_at
+                is_active, created_at, updated_at, owner_user_id
             ) VALUES (
                 $1, $2, $3,
                 $4, $5, $6,
                 $7, $8,
                 $9, $10, $11,
-                $12, $13, $14
+                $12, $13, $14, $15
             )
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(
                 query,
                 rel_id,
@@ -391,20 +480,36 @@ class RelationshipRepository:
                 True,
                 now,
                 now,
+                UUID(user_id) if user_id else None,
             )
             return self._row_to_relationship(row)
 
-    async def get_by_id(self, rel_id: UUID) -> Optional[Relationship]:
-        """Get a relationship by ID."""
+    async def get_by_id(self, rel_id: UUID, user_id: Optional[str] = None) -> Optional[Relationship]:
+        """
+        Get a relationship by ID.
+        
+        Args:
+            rel_id: The relationship's UUID
+            user_id: User ID for RLS context
+        """
         query = "SELECT * FROM relationships WHERE id = $1"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, rel_id)
             return self._row_to_relationship(row) if row else None
 
     async def get_for_person(
-        self, person_id: UUID, include_inactive: bool = False
+        self, person_id: UUID, include_inactive: bool = False, user_id: Optional[str] = None
     ) -> list[Relationship]:
-        """Get all relationships for a person."""
+        """
+        Get all relationships for a person.
+        
+        Args:
+            person_id: The person's UUID
+            include_inactive: Whether to include inactive relationships
+            user_id: User ID for RLS context
+        """
         query = """
             SELECT * FROM relationships 
             WHERE (from_person_id = $1 OR to_person_id = $1)
@@ -413,13 +518,22 @@ class RelationshipRepository:
             query += " AND is_active = TRUE"
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             rows = await conn.fetch(query, person_id)
             return [self._row_to_relationship(row) for row in rows]
 
     async def update(
-        self, rel_id: UUID, data: RelationshipUpdate
+        self, rel_id: UUID, data: RelationshipUpdate, user_id: Optional[str] = None
     ) -> Optional[Relationship]:
-        """Update a relationship."""
+        """
+        Update a relationship.
+        
+        Args:
+            rel_id: The relationship's UUID
+            data: Update data
+            user_id: User ID for RLS context
+        """
         updates = []
         values = [rel_id]
         param_count = 1
@@ -436,7 +550,7 @@ class RelationshipRepository:
                 values.append(value)
         
         if not updates:
-            return await self.get_by_id(rel_id)
+            return await self.get_by_id(rel_id, user_id)
         
         query = f"""
             UPDATE relationships 
@@ -446,11 +560,19 @@ class RelationshipRepository:
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, *values)
             return self._row_to_relationship(row) if row else None
 
-    async def end_relationship(self, rel_id: UUID) -> Optional[Relationship]:
-        """Mark a relationship as ended."""
+    async def end_relationship(self, rel_id: UUID, user_id: Optional[str] = None) -> Optional[Relationship]:
+        """
+        Mark a relationship as ended.
+        
+        Args:
+            rel_id: The relationship's UUID
+            user_id: User ID for RLS context
+        """
         query = """
             UPDATE relationships 
             SET is_active = FALSE, ended_at = NOW(), updated_at = NOW()
@@ -458,13 +580,23 @@ class RelationshipRepository:
             RETURNING *
         """
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, rel_id)
             return self._row_to_relationship(row) if row else None
 
-    async def delete(self, rel_id: UUID) -> bool:
-        """Delete a relationship."""
+    async def delete(self, rel_id: UUID, user_id: Optional[str] = None) -> bool:
+        """
+        Delete a relationship.
+        
+        Args:
+            rel_id: The relationship's UUID
+            user_id: User ID for RLS context
+        """
         query = "DELETE FROM relationships WHERE id = $1 RETURNING id"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, rel_id)
             return row is not None
 
@@ -498,25 +630,33 @@ class RelationshipRepository:
 # ============================================================================
 
 class PersonExternalIdRepository:
-    """Repository for person external ID operations (for multi-platform sync)."""
+    """Repository for person external ID operations (for multi-platform sync) with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def create(self, data: PersonExternalIdCreate) -> PersonExternalId:
-        """Create a new external ID mapping."""
+    async def create(self, data: PersonExternalIdCreate, user_id: Optional[str] = None) -> PersonExternalId:
+        """
+        Create a new external ID mapping.
+        
+        Args:
+            data: External ID creation data
+            user_id: User ID for RLS context
+        """
         ext_id = uuid4()
         now = datetime.utcnow()
         
         query = """
             INSERT INTO person_external_ids (
                 id, person_id, provider, external_id, external_metadata,
-                last_synced_at, sync_status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                last_synced_at, sync_status, created_at, updated_at, owner_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(
                 query,
                 ext_id,
@@ -528,78 +668,116 @@ class PersonExternalIdRepository:
                 ExternalIdSyncStatus.SYNCED.value,
                 now,
                 now,
+                UUID(user_id) if user_id else None,
             )
             return self._row_to_external_id(row)
 
     async def get_by_external_id(
-        self, provider: str, external_id: str
+        self, provider: str, external_id: str, user_id: Optional[str] = None
     ) -> Optional[PersonExternalId]:
-        """Find by provider and external ID."""
+        """
+        Find by provider and external ID.
+        
+        Args:
+            provider: The sync provider name
+            external_id: The external system's ID
+            user_id: User ID for RLS context
+        """
         query = """
             SELECT * FROM person_external_ids 
             WHERE provider = $1 AND external_id = $2
         """
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, provider, external_id)
             return self._row_to_external_id(row) if row else None
 
     async def get_by_person_id(
-        self, person_id: UUID, provider: Optional[str] = None
+        self, person_id: UUID, provider: Optional[str] = None, user_id: Optional[str] = None
     ) -> list[PersonExternalId]:
-        """Get all external IDs for a person."""
-        if provider:
-            query = """
-                SELECT * FROM person_external_ids 
-                WHERE person_id = $1 AND provider = $2
-            """
-            async with self.pool.acquire() as conn:
+        """
+        Get all external IDs for a person.
+        
+        Args:
+            person_id: The person's UUID
+            provider: Optional provider to filter by
+            user_id: User ID for RLS context
+        """
+        async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
+            if provider:
+                query = """
+                    SELECT * FROM person_external_ids 
+                    WHERE person_id = $1 AND provider = $2
+                """
                 rows = await conn.fetch(query, person_id, provider)
-        else:
-            query = "SELECT * FROM person_external_ids WHERE person_id = $1"
-            async with self.pool.acquire() as conn:
+            else:
+                query = "SELECT * FROM person_external_ids WHERE person_id = $1"
                 rows = await conn.fetch(query, person_id)
-        return [self._row_to_external_id(row) for row in rows]
+            return [self._row_to_external_id(row) for row in rows]
 
     async def update_sync_status(
-        self, id: UUID, status: ExternalIdSyncStatus, metadata: Optional[dict] = None
+        self, id: UUID, status: ExternalIdSyncStatus, metadata: Optional[dict] = None,
+        user_id: Optional[str] = None
     ) -> Optional[PersonExternalId]:
-        """Update sync status and optionally metadata."""
+        """
+        Update sync status and optionally metadata.
+        
+        Args:
+            id: The external ID record's UUID
+            status: New sync status
+            metadata: Optional metadata to update
+            user_id: User ID for RLS context
+        """
         now = datetime.utcnow()
         
-        if metadata:
-            query = """
-                UPDATE person_external_ids 
-                SET sync_status = $2, external_metadata = $3, 
-                    last_synced_at = $4, updated_at = $4
-                WHERE id = $1
-                RETURNING *
-            """
-            async with self.pool.acquire() as conn:
+        async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
+            if metadata:
+                query = """
+                    UPDATE person_external_ids 
+                    SET sync_status = $2, external_metadata = $3, 
+                        last_synced_at = $4, updated_at = $4
+                    WHERE id = $1
+                    RETURNING *
+                """
                 row = await conn.fetchrow(query, id, status.value, json.dumps(metadata), now)
-        else:
-            query = """
-                UPDATE person_external_ids 
-                SET sync_status = $2, last_synced_at = $3, updated_at = $3
-                WHERE id = $1
-                RETURNING *
-            """
-            async with self.pool.acquire() as conn:
+            else:
+                query = """
+                    UPDATE person_external_ids 
+                    SET sync_status = $2, last_synced_at = $3, updated_at = $3
+                    WHERE id = $1
+                    RETURNING *
+                """
                 row = await conn.fetchrow(query, id, status.value, now)
-        
-        return self._row_to_external_id(row) if row else None
+            
+            return self._row_to_external_id(row) if row else None
 
     async def upsert(
-        self, person_id: UUID, provider: str, external_id: str, metadata: dict = None
+        self, person_id: UUID, provider: str, external_id: str, metadata: dict = None,
+        user_id: Optional[str] = None
     ) -> PersonExternalId:
-        """Insert or update an external ID mapping."""
+        """
+        Insert or update an external ID mapping.
+        
+        Args:
+            person_id: The person's UUID
+            provider: The sync provider name
+            external_id: The external system's ID
+            metadata: Optional metadata
+            user_id: User ID for RLS context
+        """
         now = datetime.utcnow()
         new_id = uuid4()
         
         query = """
             INSERT INTO person_external_ids (
                 id, person_id, provider, external_id, external_metadata,
-                last_synced_at, sync_status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                last_synced_at, sync_status, created_at, updated_at, owner_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (provider, external_id) 
             DO UPDATE SET 
                 person_id = EXCLUDED.person_id,
@@ -611,6 +789,8 @@ class PersonExternalIdRepository:
         """
         
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(
                 query,
                 new_id,
@@ -622,13 +802,22 @@ class PersonExternalIdRepository:
                 ExternalIdSyncStatus.SYNCED.value,
                 now,
                 now,
+                UUID(user_id) if user_id else None,
             )
             return self._row_to_external_id(row)
 
-    async def delete(self, id: UUID) -> bool:
-        """Delete an external ID mapping."""
+    async def delete(self, id: UUID, user_id: Optional[str] = None) -> bool:
+        """
+        Delete an external ID mapping.
+        
+        Args:
+            id: The external ID record's UUID
+            user_id: User ID for RLS context
+        """
         query = "DELETE FROM person_external_ids WHERE id = $1 RETURNING id"
         async with self.pool.acquire() as conn:
+            if user_id:
+                await set_rls_user(conn, user_id)
             row = await conn.fetchrow(query, id)
             return row is not None
 
@@ -656,31 +845,47 @@ class PersonExternalIdRepository:
 # ============================================================================
 
 class SyncStateRepository:
-    """Repository for sync state operations."""
+    """Repository for sync state operations with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def get_or_create(self, user_id: str, provider: str) -> SyncState:
-        """Get sync state for user/provider, creating if needed."""
-        state = await self.get(user_id, provider)
+    async def get_or_create(self, user_id: str, provider: str, rls_user_id: Optional[str] = None) -> SyncState:
+        """
+        Get sync state for user/provider, creating if needed.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            rls_user_id: User ID for RLS context (defaults to user_id if not provided)
+        """
+        rls_id = rls_user_id or user_id
+        state = await self.get(user_id, provider, rls_user_id=rls_id)
         if state:
             return state
-        return await self.create(SyncStateCreate(user_id=user_id, provider=provider))
+        return await self.create(SyncStateCreate(user_id=user_id, provider=provider), rls_user_id=rls_id)
 
-    async def create(self, data: SyncStateCreate) -> SyncState:
-        """Create a new sync state."""
+    async def create(self, data: SyncStateCreate, rls_user_id: Optional[str] = None) -> SyncState:
+        """
+        Create a new sync state.
+        
+        Args:
+            data: Sync state creation data
+            rls_user_id: User ID for RLS context
+        """
         state_id = uuid4()
         now = datetime.utcnow()
         
         query = """
             INSERT INTO sync_state (
-                id, user_id, provider, sync_status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                id, user_id, provider, sync_status, created_at, updated_at, owner_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(
                 query,
                 state_id,
@@ -689,25 +894,52 @@ class SyncStateRepository:
                 SyncStatus.IDLE.value,
                 now,
                 now,
+                UUID(rls_user_id) if rls_user_id else None,
             )
             return self._row_to_sync_state(row)
 
-    async def get(self, user_id: str, provider: str) -> Optional[SyncState]:
-        """Get sync state for a user and provider."""
+    async def get(self, user_id: str, provider: str, rls_user_id: Optional[str] = None) -> Optional[SyncState]:
+        """
+        Get sync state for a user and provider.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            rls_user_id: User ID for RLS context
+        """
         query = "SELECT * FROM sync_state WHERE user_id = $1 AND provider = $2"
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(query, user_id, provider)
             return self._row_to_sync_state(row) if row else None
 
-    async def get_all_for_user(self, user_id: str) -> list[SyncState]:
-        """Get all sync states for a user."""
+    async def get_all_for_user(self, user_id: str, rls_user_id: Optional[str] = None) -> list[SyncState]:
+        """
+        Get all sync states for a user.
+        
+        Args:
+            user_id: The user ID to get sync states for
+            rls_user_id: User ID for RLS context
+        """
         query = "SELECT * FROM sync_state WHERE user_id = $1"
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             rows = await conn.fetch(query, user_id)
             return [self._row_to_sync_state(row) for row in rows]
 
-    async def get_pending_syncs(self, limit: int = 100) -> list[SyncState]:
-        """Get sync states that are due for sync."""
+    async def get_pending_syncs(self, limit: int = 100, rls_user_id: Optional[str] = None) -> list[SyncState]:
+        """
+        Get sync states that are due for sync.
+        
+        Note: When rls_user_id is provided, this only returns pending syncs for that user.
+        For background jobs that need cross-tenant access, omit rls_user_id.
+        
+        Args:
+            limit: Maximum number of results
+            rls_user_id: User ID for RLS context (optional for background jobs)
+        """
         query = """
             SELECT * FROM sync_state 
             WHERE sync_status = 'idle' 
@@ -716,11 +948,21 @@ class SyncStateRepository:
             LIMIT $1
         """
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             rows = await conn.fetch(query, limit)
             return [self._row_to_sync_state(row) for row in rows]
 
-    async def update(self, user_id: str, provider: str, data: SyncStateUpdate) -> Optional[SyncState]:
-        """Update sync state."""
+    async def update(self, user_id: str, provider: str, data: SyncStateUpdate, rls_user_id: Optional[str] = None) -> Optional[SyncState]:
+        """
+        Update sync state.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            data: Update data
+            rls_user_id: User ID for RLS context
+        """
         updates = []
         values = [user_id, provider]
         param_count = 2
@@ -737,7 +979,7 @@ class SyncStateRepository:
                 values.append(value)
         
         if not updates:
-            return await self.get(user_id, provider)
+            return await self.get(user_id, provider, rls_user_id=rls_user_id)
         
         query = f"""
             UPDATE sync_state 
@@ -747,14 +989,24 @@ class SyncStateRepository:
         """
         
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(query, *values)
             return self._row_to_sync_state(row) if row else None
 
-    async def start_sync(self, user_id: str, provider: str) -> Optional[SyncState]:
-        """Mark sync as started."""
+    async def start_sync(self, user_id: str, provider: str, rls_user_id: Optional[str] = None) -> Optional[SyncState]:
+        """
+        Mark sync as started.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            rls_user_id: User ID for RLS context
+        """
         return await self.update(
             user_id, provider,
-            SyncStateUpdate(sync_status=SyncStatus.SYNCING)
+            SyncStateUpdate(sync_status=SyncStatus.SYNCING),
+            rls_user_id=rls_user_id
         )
 
     async def complete_sync(
@@ -766,8 +1018,21 @@ class SyncStateRepository:
         updated: int = 0,
         is_full_sync: bool = False,
         next_sync_minutes: int = 30,
+        rls_user_id: Optional[str] = None,
     ) -> Optional[SyncState]:
-        """Mark sync as completed with statistics."""
+        """
+        Mark sync as completed with statistics.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            sync_token: Optional sync token for incremental sync
+            added: Number of records added
+            updated: Number of records updated
+            is_full_sync: Whether this was a full sync
+            next_sync_minutes: Minutes until next sync
+            rls_user_id: User ID for RLS context
+        """
         now = datetime.utcnow()
         from datetime import timedelta
         
@@ -786,14 +1051,22 @@ class SyncStateRepository:
         else:
             update_data.last_incremental_sync_at = now
         
-        return await self.update(user_id, provider, update_data)
+        return await self.update(user_id, provider, update_data, rls_user_id=rls_user_id)
 
     async def fail_sync(
-        self, user_id: str, provider: str, error_message: str
+        self, user_id: str, provider: str, error_message: str, rls_user_id: Optional[str] = None
     ) -> Optional[SyncState]:
-        """Mark sync as failed."""
+        """
+        Mark sync as failed.
+        
+        Args:
+            user_id: The user ID this sync state belongs to
+            provider: The sync provider name
+            error_message: Error description
+            rls_user_id: User ID for RLS context
+        """
         # Get current state to increment failure count
-        state = await self.get(user_id, provider)
+        state = await self.get(user_id, provider, rls_user_id=rls_user_id)
         failures = (state.consecutive_failures if state else 0) + 1
         
         # Exponential backoff: 5min, 10min, 20min, 40min, etc. (max 24 hours)
@@ -807,7 +1080,8 @@ class SyncStateRepository:
                 error_message=error_message,
                 consecutive_failures=failures,
                 next_sync_at=datetime.utcnow() + timedelta(minutes=backoff_minutes),
-            )
+            ),
+            rls_user_id=rls_user_id
         )
 
     def _row_to_sync_state(self, row: asyncpg.Record) -> SyncState:
@@ -837,13 +1111,19 @@ class SyncStateRepository:
 # ============================================================================
 
 class SyncConflictRepository:
-    """Repository for sync conflict operations."""
+    """Repository for sync conflict operations with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def create(self, data: SyncConflictCreate) -> SyncConflict:
-        """Create a new sync conflict."""
+    async def create(self, data: SyncConflictCreate, rls_user_id: Optional[str] = None) -> SyncConflict:
+        """
+        Create a new sync conflict.
+        
+        Args:
+            data: Sync conflict creation data
+            rls_user_id: User ID for RLS context
+        """
         conflict_id = uuid4()
         now = datetime.utcnow()
         
@@ -851,12 +1131,14 @@ class SyncConflictRepository:
             INSERT INTO sync_conflicts (
                 id, user_id, person_id, provider, external_id,
                 conflict_type, local_data, remote_data, suggested_resolution,
-                status, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                status, created_at, updated_at, owner_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(
                 query,
                 conflict_id,
@@ -871,17 +1153,26 @@ class SyncConflictRepository:
                 ConflictStatus.PENDING.value,
                 now,
                 now,
+                UUID(rls_user_id) if rls_user_id else None,
             )
             return self._row_to_conflict(row)
 
-    async def get_pending_for_user(self, user_id: str) -> list[SyncConflict]:
-        """Get all pending conflicts for a user."""
+    async def get_pending_for_user(self, user_id: str, rls_user_id: Optional[str] = None) -> list[SyncConflict]:
+        """
+        Get all pending conflicts for a user.
+        
+        Args:
+            user_id: The user ID to get conflicts for
+            rls_user_id: User ID for RLS context
+        """
         query = """
             SELECT * FROM sync_conflicts 
             WHERE user_id = $1 AND status = 'pending'
             ORDER BY created_at DESC
         """
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             rows = await conn.fetch(query, user_id)
             return [self._row_to_conflict(row) for row in rows]
 
@@ -889,9 +1180,18 @@ class SyncConflictRepository:
         self, 
         conflict_id: UUID, 
         resolution_type: ResolutionType,
-        resolved_by: str
+        resolved_by: str,
+        rls_user_id: Optional[str] = None
     ) -> Optional[SyncConflict]:
-        """Resolve a conflict."""
+        """
+        Resolve a conflict.
+        
+        Args:
+            conflict_id: The conflict's UUID
+            resolution_type: How the conflict was resolved
+            resolved_by: Who resolved the conflict
+            rls_user_id: User ID for RLS context
+        """
         query = """
             UPDATE sync_conflicts 
             SET status = $2, resolution_type = $3, resolved_at = NOW(), 
@@ -900,6 +1200,8 @@ class SyncConflictRepository:
             RETURNING *
         """
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(
                 query, 
                 conflict_id, 
@@ -909,8 +1211,15 @@ class SyncConflictRepository:
             )
             return self._row_to_conflict(row) if row else None
 
-    async def dismiss(self, conflict_id: UUID, dismissed_by: str) -> Optional[SyncConflict]:
-        """Dismiss a conflict without resolution."""
+    async def dismiss(self, conflict_id: UUID, dismissed_by: str, rls_user_id: Optional[str] = None) -> Optional[SyncConflict]:
+        """
+        Dismiss a conflict without resolution.
+        
+        Args:
+            conflict_id: The conflict's UUID
+            dismissed_by: Who dismissed the conflict
+            rls_user_id: User ID for RLS context
+        """
         query = """
             UPDATE sync_conflicts 
             SET status = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
@@ -918,6 +1227,8 @@ class SyncConflictRepository:
             RETURNING *
         """
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(
                 query, conflict_id, ConflictStatus.DISMISSED.value, dismissed_by
             )
@@ -960,25 +1271,33 @@ class SyncConflictRepository:
 # ============================================================================
 
 class SyncLogRepository:
-    """Repository for sync log operations."""
+    """Repository for sync log operations with RLS enforcement."""
 
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def create(self, data: SyncLogCreate) -> SyncLog:
-        """Create a new sync log entry."""
+    async def create(self, data: SyncLogCreate, rls_user_id: Optional[str] = None) -> SyncLog:
+        """
+        Create a new sync log entry.
+        
+        Args:
+            data: Sync log creation data
+            rls_user_id: User ID for RLS context
+        """
         log_id = uuid4()
         now = datetime.utcnow()
         
         query = """
             INSERT INTO sync_log (
                 id, user_id, provider, sync_type, direction,
-                status, started_at, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                status, started_at, created_at, owner_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         """
         
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             row = await conn.fetchrow(
                 query,
                 log_id,
@@ -989,6 +1308,7 @@ class SyncLogRepository:
                 "running",
                 data.started_at,
                 now,
+                UUID(rls_user_id) if rls_user_id else None,
             )
             return self._row_to_log(row)
 
@@ -1003,13 +1323,31 @@ class SyncLogRepository:
         conflicts: int = 0,
         error_message: Optional[str] = None,
         error_details: Optional[dict] = None,
+        rls_user_id: Optional[str] = None,
     ) -> Optional[SyncLog]:
-        """Complete a sync log entry."""
+        """
+        Complete a sync log entry.
+        
+        Args:
+            log_id: The sync log's UUID
+            status: Final status
+            processed: Records processed
+            added: Records added
+            updated: Records updated
+            failed: Records failed
+            conflicts: Conflicts created
+            error_message: Optional error message
+            error_details: Optional error details
+            rls_user_id: User ID for RLS context
+        """
         now = datetime.utcnow()
         
-        # Get start time to calculate duration
-        get_query = "SELECT started_at FROM sync_log WHERE id = $1"
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
+            
+            # Get start time to calculate duration
+            get_query = "SELECT started_at FROM sync_log WHERE id = $1"
             start_row = await conn.fetchrow(get_query, log_id)
             if not start_row:
                 return None
@@ -1043,9 +1381,16 @@ class SyncLogRepository:
             return self._row_to_log(row) if row else None
 
     async def get_recent_for_user(
-        self, user_id: str, limit: int = 20
+        self, user_id: str, limit: int = 20, rls_user_id: Optional[str] = None
     ) -> list[SyncLog]:
-        """Get recent sync logs for a user."""
+        """
+        Get recent sync logs for a user.
+        
+        Args:
+            user_id: The user ID to get logs for
+            limit: Maximum number of results
+            rls_user_id: User ID for RLS context
+        """
         query = """
             SELECT * FROM sync_log 
             WHERE user_id = $1
@@ -1053,6 +1398,8 @@ class SyncLogRepository:
             LIMIT $2
         """
         async with self.pool.acquire() as conn:
+            if rls_user_id:
+                await set_rls_user(conn, rls_user_id)
             rows = await conn.fetch(query, user_id, limit)
             return [self._row_to_log(row) for row in rows]
 
