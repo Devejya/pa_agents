@@ -7,6 +7,10 @@ Provides tools for:
 - Updating contact info
 - Boosting relevance on confirmation
 - Adding relationships to existing persons
+
+PII Masking:
+- find_person_candidates uses FINANCIAL_ONLY (shows contact status, not actual contact)
+- Write/update tools don't mask output (they return confirmations)
 """
 
 import logging
@@ -21,6 +25,7 @@ from app.core.entity_resolution import (
     update_contact_info_db,
     check_real_contact_info,
 )
+from app.core.pii import mask_pii_financial_only
 from app.models.person import PersonCreateInput, PersonCandidate
 
 logger = logging.getLogger(__name__)
@@ -123,7 +128,8 @@ def find_person_candidates(
             
             result_lines.append(f"   ID: {c.person_id}")
         
-        return '\n'.join(result_lines)
+        # Use FINANCIAL_ONLY - user expects to see contact status when looking up people
+        return mask_pii_financial_only('\n'.join(result_lines))
         
     except Exception as e:
         logger.error(f"Error finding candidates: {e}")

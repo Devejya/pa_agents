@@ -6,18 +6,24 @@ When a user has a user_id (from multi-tenant auth), messages are persisted
 to the database with per-user encryption.
 """
 
+import asyncio
+import contextvars
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import BaseModel, Field
 
 from ..core.agent import YenniferAssistant
 from ..core.auth import TokenData, get_current_user
 from ..core.chat_cache import get_chat_cache
 from ..core.google_services import load_user_tokens
+from ..core.pii import unmask_pii, get_pii_context
+from ..core.pii_audit import get_pii_audit_logger, flush_pii_audit
 from ..db import get_db_pool, ChatRepository
+from ..middleware.audit import get_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +100,21 @@ async def persist_message(
     role: str,
     content: str,
     model: Optional[str] = None,
+    tool_calls: Optional[list] = None,
+    tool_call_id: Optional[str] = None,
 ) -> None:
-    """Persist a message to database and cache."""
+    """
+    Persist a message to database and cache.
+    
+    Args:
+        user_id: User's UUID
+        session_id: Chat session UUID
+        role: Message role ('user', 'assistant', 'tool')
+        content: Message content
+        model: Optional model name (for assistant messages)
+        tool_calls: Optional list of tool calls (for AIMessage with tool invocations)
+        tool_call_id: Optional tool_call_id (for ToolMessage linking back to AIMessage)
+    """
     try:
         pool = await get_db_pool()
         chat_repo = ChatRepository(pool)
@@ -105,11 +124,14 @@ async def persist_message(
             role=role,
             content=content,
             model=model,
+            tool_calls=tool_calls,
+            tool_call_id=tool_call_id,
         )
         
-        # Also write to cache for fast retrieval
+        # Also write to cache for fast retrieval (cache only stores user/assistant for UI)
+        # Tool messages are not cached as they're for LLM context, not UI display
         cache = get_chat_cache()
-        if cache.is_enabled:
+        if cache.is_enabled and role in ("user", "assistant"):
             await cache.cache_message(user_id, session_id, message)
             
     except Exception as e:
@@ -134,7 +156,7 @@ async def restore_agent_context_from_db(
     
     This enables cross-device/browser persistence - when a user logs in
     from a new device, we load their previous conversation into the agent's
-    context so the LLM has full history.
+    context so the LLM has full history including tool calls and results.
     
     Args:
         agent: The YenniferAssistant instance to populate
@@ -156,8 +178,18 @@ async def restore_agent_context_from_db(
         )
         
         if messages:
-            # Convert to agent's history format
-            history = [{"role": m["role"], "content": m["content"]} for m in messages]
+            # Convert to agent's history format, including tool_calls and tool_call_id
+            history = []
+            for m in messages:
+                entry: Dict[str, Any] = {"role": m["role"], "content": m["content"]}
+                # Include tool_calls for AIMessage (assistant with tool invocations)
+                if m.get("tool_calls"):
+                    entry["tool_calls"] = m["tool_calls"]
+                # Include tool_call_id for ToolMessage (tool results)
+                if m.get("tool_call_id"):
+                    entry["tool_call_id"] = m["tool_call_id"]
+                history.append(entry)
+            
             agent.set_history(history)
             logger.info(f"Restored {len(messages)} messages into agent context for user {user_id}")
             return True
@@ -237,18 +269,87 @@ async def send_message(
                 # Continue without persistence
         
         # Get response from agent
-        response = session.chat(request.message)
+        # Run in executor with copied context to preserve ContextVars (PIIContext)
+        copied_ctx = contextvars.copy_context()
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,  # Default executor
+            copied_ctx.run,
+            session.chat,
+            request.message,
+        )
         
-        # Persist assistant response
+        # Get PII stats from the context that was used in the threadpool
+        # We need to run get_pii_context() in the same copied context
+        pii_ctx = copied_ctx.run(get_pii_context)
+        pii_stats = pii_ctx.get_stats()
+        
+        # Log PII stats (always log for debugging, even if 0)
+        logger.warning(
+            f"PII stats after agent run: total={pii_stats.get('total', 0)}, "
+            f"emails={pii_stats.get('email', 0)}, "
+            f"phones={pii_stats.get('phone', 0)}, "
+            f"ssn={pii_stats.get('ssn', 0)}, "
+            f"cards={pii_stats.get('card', 0)}"
+        )
+        
+        # Log PII audit if any masking occurred
+        if pii_stats.get("total", 0) > 0:
+            logger.warning(
+                f"PII MASKED in chat request: {pii_stats['total']} items - writing audit"
+            )
+            
+            # Queue audit entry
+            audit_logger = get_pii_audit_logger()
+            if audit_logger:
+                audit_logger.log_masking_event(
+                    user_id=user_id,
+                    request_id=str(get_request_id()) if get_request_id() else None,
+                    endpoint="/api/v1/chat",
+                    tool_name="chat",
+                    stats=pii_stats,
+                    masking_mode="full",
+                )
+                # Flush to database
+                await flush_pii_audit()
+        
+        # Unmask PII in response before returning to user
+        # The LLM saw masked data ([CARD_1], [EMAIL_1], etc.)
+        # But the user should see the actual values
+        # Run unmask in the same context to access the mappings
+        response = copied_ctx.run(unmask_pii, response)
+        
+        # Persist ALL new messages from the agent turn (tool calls, tool results, final response)
+        # This enables cross-device session continuity with full tool context
         if user_id and db_session_id:
             try:
-                await persist_message(
-                    user_id=user_id,
-                    session_id=db_session_id,
-                    role="assistant",
-                    content=response,
-                    model="gpt-4o",  # Or get from config
-                )
+                new_messages = session.get_last_new_messages()
+                for msg in new_messages:
+                    if isinstance(msg, AIMessage):
+                        # AIMessage - may have tool_calls (intermediate) or be final response
+                        tool_calls = None
+                        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            # Serialize tool_calls for storage
+                            tool_calls = [
+                                {"name": tc.get("name"), "args": tc.get("args"), "id": tc.get("id")}
+                                for tc in msg.tool_calls
+                            ]
+                        await persist_message(
+                            user_id=user_id,
+                            session_id=db_session_id,
+                            role="assistant",
+                            content=msg.content or "",
+                            model="gpt-4o",
+                            tool_calls=tool_calls,
+                        )
+                    elif isinstance(msg, ToolMessage):
+                        # ToolMessage - result from a tool call
+                        await persist_message(
+                            user_id=user_id,
+                            session_id=db_session_id,
+                            role="tool",
+                            content=msg.content,
+                            tool_call_id=msg.tool_call_id,
+                        )
                 
                 # Auto-title new sessions after first message exchange
                 if is_new_session:
@@ -258,7 +359,7 @@ async def send_message(
                     logger.debug(f"Auto-titled new session {db_session_id}")
                     
             except Exception as e:
-                logger.error(f"Failed to persist assistant message: {e}")
+                logger.error(f"Failed to persist agent messages: {e}")
         
         return ChatResponse(
             response=response,

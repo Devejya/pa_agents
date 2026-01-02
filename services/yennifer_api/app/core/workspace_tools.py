@@ -2,11 +2,17 @@
 LangChain Tools for Google Workspace
 
 These tools wrap the Google Workspace functions for use with LangChain agents.
+
+PII Masking:
+- Read tools use FULL masking (emails, phones, SSN, cards, etc.)
+- Contact lookup tools use FINANCIAL_ONLY (keep email/phone visible)
+- Write/action tools don't mask output (they return confirmations)
 """
 
 from typing import Optional
 from langchain_core.tools import tool
 
+from .pii import mask_pii, mask_pii_financial_only, MaskingMode
 from ..tools import (
     # Calendar
     list_calendar_events as _list_calendar_events,
@@ -129,7 +135,9 @@ def list_calendar_events(days_ahead: int = 7) -> str:
             result += f"  Location: {event['location']}\n"
         if event['attendees']:
             result += f"  Attendees: {', '.join(event['attendees'])}\n"
-    return result
+    
+    # Mask PII (emails in attendees, addresses in location)
+    return mask_pii(result)
 
 
 @tool
@@ -276,7 +284,9 @@ def read_recent_emails(max_results: int = 10, days_back: int = 7) -> str:
         result += f"  Date: {email['date']}\n"
         result += f"  {email['snippet'][:100]}...\n"
         result += f"  ID: {email['id']}\n"
-    return result
+    
+    # Mask PII in email content (addresses, SSN, cards, etc.)
+    return mask_pii(result)
 
 
 @tool
@@ -305,7 +315,9 @@ def search_emails(query: str, max_results: int = 10) -> str:
         result += f"  From: {email['from']}\n"
         result += f"  Date: {email['date']}\n"
         result += f"  ID: {email['id']}\n"
-    return result
+    
+    # Mask PII in email metadata
+    return mask_pii(result)
 
 
 @tool
@@ -326,7 +338,9 @@ def get_email_details(email_id: str) -> str:
     result += f"To: {email['to']}\n"
     result += f"Date: {email['date']}\n\n"
     result += f"{email['body']}"
-    return result
+    
+    # Mask PII in full email content (critical - body may contain sensitive data)
+    return mask_pii(result)
 
 
 @tool
@@ -379,7 +393,9 @@ def list_my_contacts(max_results: int = 20) -> str:
         if contact['organization']:
             result += f" ({contact['organization']})"
         result += "\n"
-    return result
+    
+    # Use FINANCIAL_ONLY - keep emails/phones visible for contact queries
+    return mask_pii_financial_only(result)
 
 
 @tool
@@ -408,7 +424,9 @@ def search_my_contacts(query: str) -> str:
         if contact['phones']:
             result += f"\n  Phone: {contact['phones'][0]}"
         result += "\n"
-    return result
+    
+    # Use FINANCIAL_ONLY - keep emails/phones visible for contact queries
+    return mask_pii_financial_only(result)
 
 
 # ============== Drive Tools ==============
@@ -684,7 +702,9 @@ def read_spreadsheet_data(spreadsheet_id: str, range_name: str = "Sheet1") -> st
     
     if data['row_count'] > 20:
         result += f"\n... ({data['row_count'] - 20} more rows)"
-    return result
+    
+    # Mask PII in spreadsheet data (may contain sensitive information)
+    return mask_pii(result)
 
 
 # ============== Docs Tools ==============
@@ -723,7 +743,10 @@ def read_google_doc(document_id: str) -> str:
         user_email=get_current_user(),
         document_id=document_id,
     )
-    return f"**{doc['title']}**\n\n{doc['content']}"
+    result = f"**{doc['title']}**\n\n{doc['content']}"
+    
+    # Mask PII in document content (critical - docs may contain sensitive data)
+    return mask_pii(result)
 
 
 @tool
@@ -829,7 +852,9 @@ def read_presentation_content(presentation_id: str) -> str:
     for slide in pres['slides']:
         result += f"\n--- Slide {slide['slide_number']} ---\n"
         result += slide['content'] + "\n"
-    return result
+    
+    # Mask PII in presentation content
+    return mask_pii(result)
 
 
 @tool
@@ -1066,9 +1091,12 @@ def get_my_profile() -> str:
                 parts.append(f"**Interests:** {', '.join([i.get('name', str(i)) if isinstance(i, dict) else str(i) for i in interests])}")
         
         if parts:
-            return "Here's what I know about you:\n\n" + "\n".join(parts)
+            result = "Here's what I know about you:\n\n" + "\n".join(parts)
         else:
-            return f"I know your email is {user_email}, but I don't have much other information stored about you yet."
+            result = f"I know your email is {user_email}, but I don't have much other information stored about you yet."
+        
+        # Use FINANCIAL_ONLY - user expects to see their own contact info
+        return mask_pii_financial_only(result)
             
     except Exception as e:
         return f"I know your email is {user_email}, but I encountered an error retrieving your profile: {str(e)}"
@@ -1162,7 +1190,8 @@ def lookup_contact_email(name: str) -> str:
             if m['company']:
                 result += f"\nCompany: {m['company']}"
             result += f"\n\n✅ Use email `{m['email']}` when creating calendar events or sending emails."
-            return result
+            # Use FINANCIAL_ONLY - user expects to see contact info
+            return mask_pii_financial_only(result)
         
         # Multiple matches
         result = f"Found {len(matches)} contacts matching '{name}':\n"
@@ -1171,7 +1200,8 @@ def lookup_contact_email(name: str) -> str:
             if m['company']:
                 result += f" ({m['company']})"
         result += "\n\nPlease specify which contact's email you'd like to use."
-        return result
+        # Use FINANCIAL_ONLY - user expects to see contact info
+        return mask_pii_financial_only(result)
         
     except Exception as e:
         return f"Error looking up contact: {str(e)}"

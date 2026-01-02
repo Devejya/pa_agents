@@ -18,7 +18,7 @@ export default function ChatPage() {
   const [isThinking, setIsThinking] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load chat history - server first, then localStorage fallback
   // This enables cross-device persistence
@@ -100,6 +100,11 @@ export default function ChatPage() {
 
     const userMessage = input.trim();
     setInput('');
+    
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
     
     // Add user message
     const newUserMessage: ChatMessageType & { timestamp: string } = {
@@ -244,20 +249,35 @@ export default function ChatPage() {
       {/* Input area */}
       <div className="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 p-3 sm:p-4 shrink-0">
         <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3">
-            <input
+          <form onSubmit={handleSubmit} className="flex items-end gap-2 sm:gap-3">
+            <textarea
               ref={inputRef}
-              type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Auto-resize textarea
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+              }}
+              onKeyDown={(e) => {
+                // Submit on Enter (without Shift)
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (input.trim() && !isThinking) {
+                    handleSubmit(e);
+                  }
+                }
+              }}
               placeholder="Ask Yennifer anything..."
               disabled={isThinking}
-              className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 rounded-full focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 dark:disabled:bg-zinc-900 disabled:text-gray-500 dark:disabled:text-gray-500"
+              rows={1}
+              className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yennifer-500 focus:border-transparent disabled:bg-gray-50 dark:disabled:bg-zinc-900 disabled:text-gray-500 dark:disabled:text-gray-500 resize-none overflow-y-auto"
+              style={{ maxHeight: '200px' }}
             />
             <button
               type="submit"
               disabled={!input.trim() || isThinking}
-              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-yennifer-700 text-white rounded-full font-medium text-sm sm:text-base hover:bg-yennifer-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+              className="px-4 sm:px-6 py-2.5 sm:py-3 bg-yennifer-700 text-white rounded-full font-medium text-sm sm:text-base hover:bg-yennifer-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0 self-end"
             >
               Send
             </button>

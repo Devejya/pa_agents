@@ -353,16 +353,22 @@ class YenniferAssistant:
             
             # Find the last AI message that is a FINAL response (no pending tool calls)
             # AIMessages with tool_calls are intermediate steps, not the final response
+            # However, if no terminal message exists, fall back to the most recent intermediate
             assistant_response = ""
+            fallback_response = ""
             for msg in reversed(response_messages):
                 if isinstance(msg, AIMessage) and msg.content:
-                    # Skip messages that have tool_calls - those are intermediate
                     if not getattr(msg, 'tool_calls', None):
+                        # Terminal message (no tool_calls) - use this
                         assistant_response = msg.content
                         break
+                    elif not fallback_response:
+                        # First intermediate message with content - save as fallback
+                        fallback_response = msg.content
             
             if not assistant_response:
-                assistant_response = "I apologize, I couldn't process that request. Could you try again?"
+                # No terminal message found - use fallback if available
+                assistant_response = fallback_response or "I apologize, I couldn't process that request. Could you try again?"
             
             # Update chat history with full turn (including tool calls and results)
             # This preserves context for follow-up questions like "what was in that email?"
@@ -372,6 +378,9 @@ class YenniferAssistant:
             # These are the messages after the ones we passed in
             new_messages = response_messages[len(trimmed_messages):]
             self.chat_history.extend(new_messages)
+            
+            # Store new messages for database persistence (accessed via get_last_new_messages)
+            self._last_new_messages = new_messages
             
             return assistant_response
             
@@ -401,7 +410,7 @@ class YenniferAssistant:
                 entry = {"role": "assistant", "content": msg.content}
                 if hasattr(msg, 'tool_calls') and msg.tool_calls:
                     entry["tool_calls"] = [
-                        {"name": tc.get("name"), "args": tc.get("args")}
+                        {"name": tc.get("name"), "args": tc.get("args"), "id": tc.get("id")}
                         for tc in msg.tool_calls
                     ]
                 history.append(entry)
@@ -412,6 +421,18 @@ class YenniferAssistant:
                     "content": msg.content,
                 })
         return history
+    
+    def get_last_new_messages(self) -> list:
+        """
+        Get the messages generated in the last chat turn.
+        
+        This is used for database persistence - includes AIMessages (with tool_calls)
+        and ToolMessages (with tool results) that were generated during the turn.
+        
+        Returns:
+            List of LangChain message objects from the last turn
+        """
+        return getattr(self, '_last_new_messages', [])
     
     def set_history(self, history: list[dict]):
         """

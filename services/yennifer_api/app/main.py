@@ -29,8 +29,9 @@ from .routes import auth, chat, workspace, jobs, contacts, user_data
 from .core.config import get_settings
 from .core.scheduler import start_scheduler, stop_scheduler
 from .core.audit import init_audit_logger, shutdown_audit_logger
+from .core.pii_audit import init_pii_audit_logger
 from .db.connection import init_db, close_db, get_db_pool
-from .middleware import AuditMiddleware
+from .middleware import AuditMiddleware, PIIContextMiddleware
 from .jobs import register_all_jobs
 
 # Configure logging
@@ -56,12 +57,16 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database connection established")
         
-        # Initialize audit logger with database pool
-        pool = get_db_pool()
+        # Initialize audit loggers with database pool
+        pool = await get_db_pool()
         if pool:
             logger.info("Initializing audit logger...")
             await init_audit_logger(pool)
             logger.info("Audit logger initialized")
+            
+            logger.info("Initializing PII audit logger...")
+            init_pii_audit_logger(pool)
+            logger.info("PII audit logger initialized")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         logger.warning("Continuing without database - token storage will be unavailable")
@@ -103,6 +108,9 @@ app = FastAPI(
 
 # Audit middleware (must be added first to wrap all requests)
 app.add_middleware(AuditMiddleware)
+
+# PII context middleware (creates per-request context for PII masking)
+app.add_middleware(PIIContextMiddleware)
 
 # CORS middleware
 app.add_middleware(

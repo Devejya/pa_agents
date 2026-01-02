@@ -6,6 +6,11 @@ interests, and important dates for personalized interactions.
 
 Note: These tools use synchronous database access because LangChain
 tools are called synchronously within the agent execution context.
+
+PII Masking:
+- Read tools use FULL masking (emails, phones, SSN, cards, etc.)
+- Contact lookup tools use FINANCIAL_ONLY (keep email/phone visible)
+- Write/save tools don't mask output (they return confirmations)
 """
 
 import logging
@@ -18,6 +23,7 @@ from langchain_core.tools import tool
 
 from ..core.config import get_settings
 from ..core.encryption import get_encryption
+from ..core.pii import mask_pii, mask_pii_financial_only
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +137,8 @@ def get_user_memories(context: Optional[str] = None, category: Optional[str] = N
                 except Exception as e:
                     logger.error(f"Failed to decrypt memory {row['id']}: {e}")
             
-            return result
+            # Mask PII in memories (may contain sensitive info)
+            return mask_pii(result)
         finally:
             conn.close()
             
@@ -263,7 +270,8 @@ def get_user_interests(category: Optional[str] = None, min_level: int = 50) -> s
                 except Exception as e:
                     logger.error(f"Failed to decrypt interest {row['id']}: {e}")
             
-            return result
+            # Mask PII in interests (notes may contain sensitive info)
+            return mask_pii(result)
         finally:
             conn.close()
             
@@ -407,7 +415,8 @@ def get_upcoming_important_dates(days_ahead: int = 30) -> str:
                 except Exception as e:
                     logger.error(f"Failed to decrypt date {row['id']}: {e}")
             
-            return result
+            # Mask PII in dates (titles/notes may contain sensitive info)
+            return mask_pii(result)
         finally:
             conn.close()
             
@@ -541,7 +550,8 @@ def find_person_by_relationship(relationship_type: str) -> str:
                 if row.get('category'):
                     result += f"  - Category: {row['category']}\n"
             
-            return result
+            # Use FINANCIAL_ONLY - user expects to see contact info when looking up people
+            return mask_pii_financial_only(result)
             
         finally:
             conn.close()
@@ -625,7 +635,8 @@ def get_person_interests(person_id: str) -> str:
                 except Exception as e:
                     logger.error(f"Failed to decrypt interest {row['id']}: {e}")
             
-            return result
+            # Mask PII in interests (notes may contain sensitive info)
+            return mask_pii(result)
             
         finally:
             conn.close()
@@ -781,7 +792,10 @@ def get_important_dates_for_person(person_id: str) -> str:
             if not result_parts:
                 return f"No important dates recorded for {person_name}."
             
-            return f"**Important dates for {person_name}:**\n" + "\n".join(result_parts)
+            result = f"**Important dates for {person_name}:**\n" + "\n".join(result_parts)
+            
+            # Mask PII in dates (titles may contain sensitive info)
+            return mask_pii(result)
             
         finally:
             conn.close()
@@ -1270,7 +1284,8 @@ def get_person_notes(person_id: str, include_expired: bool = False) -> str:
                     logger.error(f"Error decrypting note: {e}")
                     continue
             
-            return '\n'.join(result_lines)
+            # Mask PII in notes (may contain sensitive info)
+            return mask_pii('\n'.join(result_lines))
             
         finally:
             conn.close()
@@ -1372,7 +1387,8 @@ def get_upcoming_person_notes(days_ahead: int = 7) -> str:
                     logger.error(f"Error decrypting note: {e}")
                     continue
             
-            return '\n'.join(result_lines)
+            # Mask PII in notes (may contain sensitive info)
+            return mask_pii('\n'.join(result_lines))
             
         finally:
             conn.close()

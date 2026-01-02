@@ -11,6 +11,7 @@ from .audit import (
     get_user_agent,
     set_current_user_id,
 )
+from .pii_context import PIIContextMiddleware
 
 __all__ = [
     "AuditMiddleware",
@@ -20,5 +21,6 @@ __all__ = [
     "get_request_id",
     "get_user_agent",
     "set_current_user_id",
+    "PIIContextMiddleware",
 ]
 

@@ -325,6 +325,7 @@ class ChatRepository:
         role: str,
         content: str,
         tool_calls: Optional[List[Dict]] = None,
+        tool_call_id: Optional[str] = None,
         tokens_used: Optional[int] = None,
         model: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -334,9 +335,10 @@ class ChatRepository:
         Args:
             user_id: The user's UUID.
             session_id: The session UUID.
-            role: Message role ('user', 'assistant', 'system').
+            role: Message role ('user', 'assistant', 'tool').
             content: Message content (will be encrypted).
-            tool_calls: Optional list of tool calls (will be encrypted).
+            tool_calls: Optional list of tool calls for AIMessage (will be encrypted).
+            tool_call_id: Optional tool_call_id for ToolMessage (links to AIMessage).
             tokens_used: Optional token count.
             model: Optional model name.
             
@@ -374,11 +376,11 @@ class ChatRepository:
                 row = await conn.fetchrow("""
                     INSERT INTO chat_messages 
                         (session_id, user_id, role, content_encrypted, tool_calls_encrypted, 
-                         tokens_used, model)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    RETURNING id, session_id, user_id, role, created_at, tokens_used, model
+                         tool_call_id, tokens_used, model)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING id, session_id, user_id, role, tool_call_id, created_at, tokens_used, model
                 """, session_id, user_id, role, content_encrypted, tool_calls_encrypted,
-                    tokens_used, model)
+                    tool_call_id, tokens_used, model)
                 
                 logger.debug(f"Added {role} message to session {session_id}")
                 
@@ -389,6 +391,7 @@ class ChatRepository:
                     "role": row["role"],
                     "content": content,  # Return decrypted
                     "tool_calls": tool_calls,
+                    "tool_call_id": row["tool_call_id"],
                     "tokens_used": row["tokens_used"],
                     "model": row["model"],
                     "created_at": row["created_at"].isoformat(),
@@ -439,7 +442,7 @@ class ChatRepository:
                 if before_id:
                     rows = await conn.fetch("""
                         SELECT id, session_id, user_id, role, content_encrypted,
-                               tool_calls_encrypted, tokens_used, model, created_at
+                               tool_calls_encrypted, tool_call_id, tokens_used, model, created_at
                         FROM chat_messages
                         WHERE session_id = $1 AND id < $2
                         ORDER BY created_at DESC
@@ -448,7 +451,7 @@ class ChatRepository:
                 else:
                     rows = await conn.fetch("""
                         SELECT id, session_id, user_id, role, content_encrypted,
-                               tool_calls_encrypted, tokens_used, model, created_at
+                               tool_calls_encrypted, tool_call_id, tokens_used, model, created_at
                         FROM chat_messages
                         WHERE session_id = $1
                         ORDER BY created_at ASC
@@ -473,6 +476,7 @@ class ChatRepository:
                         "role": row["role"],
                         "content": content,
                         "tool_calls": tool_calls,
+                        "tool_call_id": row["tool_call_id"],
                         "tokens_used": row["tokens_used"],
                         "model": row["model"],
                         "created_at": row["created_at"].isoformat(),
