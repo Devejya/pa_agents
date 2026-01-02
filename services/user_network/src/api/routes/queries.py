@@ -244,9 +244,9 @@ async def get_interests_by_name(
 @router.get("/traverse")
 async def traverse_relationships(
     path: str = Query(..., description="Comma-separated path, e.g., 'sister,husband'"),
-    pool: DbPool = None,
-    api_key: ApiKey = None,
-    user_id: UserId = None,
+    pool: DbPool,
+    api_key: ApiKey,
+    user_id: UserId,
 ) -> list[dict]:
     """
     Traverse relationships from core user.
