@@ -5,11 +5,14 @@ Web-based AI assistant with Google Workspace integration.
 """
 
 import asyncio
+import logging
 import os
 from typing import Optional
 from uuid import UUID
 
 from langchain_openai import ChatOpenAI
+
+logger = logging.getLogger(__name__)
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, trim_messages
 from langgraph.prebuilt import create_react_agent
 
@@ -447,6 +450,26 @@ class YenniferAssistant:
             
             # Store new messages for database persistence (accessed via get_last_new_messages)
             self._last_new_messages = new_messages
+            
+            # =========================================================
+            # DEBUG: Log what's being stored in chat_history
+            # Remove this block after QA is complete
+            # =========================================================
+            logger.warning("=" * 60)
+            logger.warning(f"CHAT_HISTORY after turn: {len(self.chat_history)} total messages")
+            logger.warning(f"NEW_MESSAGES this turn: {len(new_messages)} messages")
+            for i, msg in enumerate(new_messages):
+                msg_type = type(msg).__name__
+                content_preview = (msg.content[:80] + "...") if msg.content and len(msg.content) > 80 else (msg.content or "(empty)")
+                extras = []
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    extras.append(f"tool_calls={[tc.get('name') for tc in msg.tool_calls]}")
+                if hasattr(msg, 'tool_call_id') and msg.tool_call_id:
+                    extras.append(f"tool_call_id={msg.tool_call_id}")
+                extra_str = f" [{', '.join(extras)}]" if extras else ""
+                logger.warning(f"  [new {i}] {msg_type}: {content_preview}{extra_str}")
+            logger.warning("=" * 60)
+            # =========================================================
             
             return assistant_response
             

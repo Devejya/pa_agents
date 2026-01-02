@@ -351,6 +351,25 @@ async def send_message(
                             tool_call_id=msg.tool_call_id,
                         )
                 
+                # =========================================================
+                # DEBUG: Log what was persisted to DB
+                # Remove this block after QA is complete
+                # =========================================================
+                logger.warning("=" * 60)
+                logger.warning(f"PERSISTED to DB: {len(new_messages)} messages for session {db_session_id}")
+                for i, msg in enumerate(new_messages):
+                    msg_type = type(msg).__name__
+                    content_preview = (msg.content[:80] + "...") if msg.content and len(msg.content) > 80 else (msg.content or "(empty)")
+                    extras = []
+                    if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                        extras.append(f"tool_calls={[tc.get('name') for tc in msg.tool_calls]}")
+                    if isinstance(msg, ToolMessage):
+                        extras.append(f"tool_call_id={msg.tool_call_id}")
+                    extra_str = f" [{', '.join(extras)}]" if extras else ""
+                    logger.warning(f"  [db {i}] {msg_type}: {content_preview}{extra_str}")
+                logger.warning("=" * 60)
+                # =========================================================
+                
                 # Auto-title new sessions after first message exchange
                 if is_new_session:
                     pool = await get_db_pool()
