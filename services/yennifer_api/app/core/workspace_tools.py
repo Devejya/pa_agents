@@ -454,7 +454,10 @@ def list_drive_files(max_results: int = 20) -> str:
         result += f"\n- **{f['name']}**\n"
         result += f"  Type: {f['mime_type']}\n"
         result += f"  Modified: {f['modified_time']}\n"
-        result += f"  ID: {f['id']}\n"
+        if f.get('web_link'):
+            result += f"  Link: {f['web_link']}\n"
+        else:
+            result += f"  ID: {f['id']}\n"
     return result
 
 
@@ -665,7 +668,7 @@ def list_spreadsheets() -> str:
     List Google Sheets spreadsheets.
     
     Returns:
-        List of spreadsheets with their IDs (needed for read_spreadsheet_data)
+        List of spreadsheets with links
     """
     sheets = _list_spreadsheets(user_email=get_current_user())
     if not sheets:
@@ -674,7 +677,8 @@ def list_spreadsheets() -> str:
     result = "Your spreadsheets:\n"
     for s in sheets:
         result += f"\n- **{s['name']}**\n"
-        result += f"  ID: {s['id']}\n"
+        link = s.get('web_link') or f"https://docs.google.com/spreadsheets/d/{s['id']}"
+        result += f"  Link: {link}\n"
     return result
 
 
@@ -691,7 +695,7 @@ def search_spreadsheets(search_term: str) -> str:
         search_term: Name or partial name to search for (case-insensitive)
         
     Returns:
-        Matching spreadsheets with their IDs
+        Matching spreadsheets with links and IDs
     """
     sheets = _list_spreadsheets(
         user_email=get_current_user(),
@@ -703,6 +707,8 @@ def search_spreadsheets(search_term: str) -> str:
     result = f"Spreadsheets matching '{search_term}':\n"
     for s in sheets:
         result += f"\n- **{s['name']}**\n"
+        link = s.get('web_link') or f"https://docs.google.com/spreadsheets/d/{s['id']}"
+        result += f"  Link: {link}\n"
         result += f"  ID: {s['id']}\n"
     
     result += "\n💡 Use the ID above with read_spreadsheet_data to access the spreadsheet."
@@ -780,7 +786,7 @@ def list_google_docs() -> str:
     List Google Docs documents.
     
     Returns:
-        List of documents
+        List of documents with links
     """
     docs = _list_documents(user_email=get_current_user())
     if not docs:
@@ -789,7 +795,8 @@ def list_google_docs() -> str:
     result = "Your documents:\n"
     for d in docs:
         result += f"\n- **{d['name']}**\n"
-        result += f"  ID: {d['id']}\n"
+        link = d.get('web_link') or f"https://docs.google.com/document/d/{d['id']}"
+        result += f"  Link: {link}\n"
     return result
 
 
@@ -884,7 +891,7 @@ def list_presentations() -> str:
     List Google Slides presentations.
     
     Returns:
-        List of presentations
+        List of presentations with links
     """
     slides = _list_presentations(user_email=get_current_user())
     if not slides:
@@ -893,7 +900,8 @@ def list_presentations() -> str:
     result = "Your presentations:\n"
     for s in slides:
         result += f"\n- **{s['name']}**\n"
-        result += f"  ID: {s['id']}\n"
+        link = s.get('web_link') or f"https://docs.google.com/presentation/d/{s['id']}"
+        result += f"  Link: {link}\n"
     return result
 
 
