@@ -351,12 +351,15 @@ class YenniferAssistant:
             # Extract assistant response
             response_messages = result.get("messages", [])
             
-            # Find the last AI message
+            # Find the last AI message that is a FINAL response (no pending tool calls)
+            # AIMessages with tool_calls are intermediate steps, not the final response
             assistant_response = ""
             for msg in reversed(response_messages):
                 if isinstance(msg, AIMessage) and msg.content:
-                    assistant_response = msg.content
-                    break
+                    # Skip messages that have tool_calls - those are intermediate
+                    if not getattr(msg, 'tool_calls', None):
+                        assistant_response = msg.content
+                        break
             
             if not assistant_response:
                 assistant_response = "I apologize, I couldn't process that request. Could you try again?"
