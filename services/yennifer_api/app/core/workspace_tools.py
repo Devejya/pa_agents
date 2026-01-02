@@ -720,10 +720,20 @@ def read_spreadsheet_data(spreadsheet_id: str, range_name: str = "Sheet1") -> st
     
     Args:
         spreadsheet_id: The spreadsheet ID (from search_spreadsheets or list_spreadsheets)
-        range_name: Sheet and range (e.g., "Sheet1!A1:D10" or just "Sheet1" for whole sheet)
+        range_name: Sheet name and optional range. CRITICAL SYNTAX:
+            - For sheet named "Sheet1": use "Sheet1" or "Sheet1!A1:Z100"
+            - For sheets with names like P0, P1, Q1 (that look like cell refs):
+              MUST quote the name: "'P1'" or "'P1'!A1:Z100"
+            - Common mistake: "P1" alone means cell P1 on first sheet, NOT sheet named P1!
         
     Returns:
         Spreadsheet data as text
+        
+    Examples:
+        - range_name="Sheet1" → reads all of Sheet1
+        - range_name="'P1'" → reads all of sheet named "P1" (quoted!)
+        - range_name="'P1'!A1:D50" → reads A1:D50 from sheet named "P1"
+        - range_name="Tickets!A:Z" → reads columns A-Z from sheet named "Tickets"
     """
     try:
         data = _read_spreadsheet(
@@ -737,6 +747,20 @@ def read_spreadsheet_data(spreadsheet_id: str, range_name: str = "Sheet1") -> st
     
     result = f"**{data['title']}** - {data['range']}\n"
     result += f"Available sheets: {', '.join(data['sheets'])}\n\n"
+    
+    # Check if data is empty
+    if not data['values']:
+        result += "(No data found in this range)\n\n"
+        # Provide helpful guidance if the range looks like a cell reference
+        # but there are sheets with similar names
+        if range_name and not range_name.startswith("'"):
+            matching_sheets = [s for s in data['sheets'] if s.upper() == range_name.upper() or 
+                             (len(range_name) <= 3 and range_name.upper() in [s.upper() for s in data['sheets']])]
+            if matching_sheets or any(s in ['P0', 'P1', 'P2', 'Q1', 'Q2'] for s in data['sheets']):
+                result += "💡 **Tip:** If you meant to read a sheet named like 'P1' or 'P0', "
+                result += "you must quote the name: range_name=\"'P1'\" or \"'P1'!A1:Z100\"\n"
+                result += f"   Available sheets: {', '.join(data['sheets'])}\n"
+        return result
     
     for row in data['values'][:20]:  # Limit rows
         result += " | ".join(str(cell) for cell in row) + "\n"
