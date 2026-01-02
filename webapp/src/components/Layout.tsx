@@ -29,7 +29,7 @@ export default function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-zinc-950 overflow-hidden">
+    <div className="flex h-screen h-[100dvh] bg-gray-50 dark:bg-zinc-950 overflow-hidden">
       {/* Mobile overlay */}
       {isMobile && sidebarOpen && (
         <div 

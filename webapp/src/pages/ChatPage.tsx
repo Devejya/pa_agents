@@ -247,7 +247,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input area */}
-      <div className="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 p-3 sm:p-4 shrink-0">
+      <div className="bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-zinc-800 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="flex items-end gap-2 sm:gap-3">
             <textarea
@@ -286,7 +286,7 @@ export default function ChatPage() {
       </div>
 
       {/* Help button (floating) - adjusted position for mobile */}
-      <button className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
+      <button className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] sm:bottom-24 right-4 sm:right-6 w-9 h-9 sm:w-10 sm:h-10 bg-gray-800 dark:bg-zinc-700 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors z-30 text-sm sm:text-base">
         ?
       </button>
     </div>

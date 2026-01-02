@@ -14,6 +14,7 @@ PII Masking:
 """
 
 import logging
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -1445,11 +1446,16 @@ async def build_user_context(user_id: UUID) -> str:
         MemoriesRepository,
     )
     
+    # Always include current date/time first (LLMs are bad at date arithmetic)
+    now = datetime.now()
+    context_parts = [
+        f"**Current date:** {now.strftime('%A, %B %d, %Y')} at {now.strftime('%I:%M %p')}"
+    ]
+    
     pool = await get_db_pool()
     if not pool:
-        return ""
-    
-    context_parts = []
+        # Return at least the current date even without DB
+        return "\n\n--- USER CONTEXT ---\n" + "\n".join(context_parts) + "\n--- END USER CONTEXT ---\n"
     
     try:
         # Get high-confidence memories
