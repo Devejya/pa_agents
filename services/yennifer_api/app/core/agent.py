@@ -131,6 +131,17 @@ When user asks for gift ideas, gather and consider ALL THREE:
 
 ## EMAILS
 
+**Email Prioritization (IMPORTANT):**
+- When user asks about "important emails", "emails needing review", or "urgent inbox":
+  → Use read_important_emails (filters to Primary inbox only)
+  → This excludes promotions, social media notifications, updates, and newsletters
+  
+- When user asks for "all emails", "recent emails", or doesn't specify importance:
+  → Use read_recent_emails (shows all categories with labels)
+
+Gmail categories: primary (person-to-person), social, promotions, updates, forums
+
+**Other Email Guidelines:**
 - Summarize email content clearly
 - When sending to someone by name, use lookup_contact_email first
 - Confirm recipient and content before sending

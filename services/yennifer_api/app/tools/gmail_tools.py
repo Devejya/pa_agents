@@ -14,6 +14,34 @@ from bs4 import BeautifulSoup
 from ..core.google_services import get_gmail_service
 
 
+# Gmail category label mappings
+# These are the internal label IDs Gmail uses for category tabs
+GMAIL_CATEGORIES = {
+    "CATEGORY_PERSONAL": "primary",
+    "CATEGORY_SOCIAL": "social",
+    "CATEGORY_PROMOTIONS": "promotions",
+    "CATEGORY_UPDATES": "updates",
+    "CATEGORY_FORUMS": "forums",
+}
+
+
+def _get_category(labels: list) -> str:
+    """
+    Extract Gmail category from label IDs.
+    
+    Args:
+        labels: List of Gmail label IDs from the message
+        
+    Returns:
+        Category name (primary, social, promotions, updates, forums)
+        Defaults to "primary" if no category label found
+    """
+    for label in labels:
+        if label in GMAIL_CATEGORIES:
+            return GMAIL_CATEGORIES[label]
+    return "primary"  # Default if no category label
+
+
 def _decode_body(payload: dict) -> str:
     """Extract and decode email body from payload."""
     body = ""
@@ -48,6 +76,7 @@ def read_emails(
     query: str = "",
     days_back: Optional[int] = None,
     unread_only: bool = False,
+    category: Optional[str] = None,
 ) -> list[dict]:
     """
     Read emails from Gmail inbox.
@@ -58,6 +87,7 @@ def read_emails(
         query: Gmail search query (e.g., "from:boss@company.com")
         days_back: Only fetch emails from last N days
         unread_only: Only fetch unread emails
+        category: Filter by Gmail category (primary, social, promotions, updates, forums)
         
     Returns:
         List of email dictionaries
@@ -73,6 +103,10 @@ def read_emails(
     
     if unread_only:
         query_parts.append("is:unread")
+    
+    # Add category filter if specified
+    if category:
+        query_parts.append(f"category:{category}")
     
     final_query = " ".join(query_parts)
     
@@ -98,6 +132,7 @@ def read_emails(
         ).execute()
         
         headers = full_msg.get("payload", {}).get("headers", [])
+        label_ids = full_msg.get("labelIds", [])
         
         email_data = {
             "id": msg["id"],
@@ -108,8 +143,9 @@ def read_emails(
             "date": _get_header(headers, "Date"),
             "snippet": full_msg.get("snippet", ""),
             "body": _decode_body(full_msg.get("payload", {})),
-            "labels": full_msg.get("labelIds", []),
-            "is_unread": "UNREAD" in full_msg.get("labelIds", []),
+            "labels": label_ids,
+            "is_unread": "UNREAD" in label_ids,
+            "category": _get_category(label_ids),
         }
         emails.append(email_data)
     
@@ -136,6 +172,7 @@ def get_email_by_id(user_email: str, email_id: str) -> dict:
     ).execute()
     
     headers = full_msg.get("payload", {}).get("headers", [])
+    label_ids = full_msg.get("labelIds", [])
     
     return {
         "id": email_id,
@@ -146,8 +183,9 @@ def get_email_by_id(user_email: str, email_id: str) -> dict:
         "date": _get_header(headers, "Date"),
         "snippet": full_msg.get("snippet", ""),
         "body": _decode_body(full_msg.get("payload", {})),
-        "labels": full_msg.get("labelIds", []),
-        "is_unread": "UNREAD" in full_msg.get("labelIds", []),
+        "labels": label_ids,
+        "is_unread": "UNREAD" in label_ids,
+        "category": _get_category(label_ids),
     }
 
 

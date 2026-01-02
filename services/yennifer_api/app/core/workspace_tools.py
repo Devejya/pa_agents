@@ -9,6 +9,7 @@ PII Masking:
 - Write/action tools don't mask output (they return confirmations)
 """
 
+from datetime import datetime
 from typing import Optional
 from langchain_core.tools import tool
 
@@ -130,7 +131,30 @@ def list_calendar_events(days_ahead: int = 7) -> str:
     result = "Upcoming calendar events:\n"
     for event in events:
         result += f"\n- **{event['summary']}**\n"
-        result += f"  Time: {event['start']} to {event['end']}\n"
+        
+        # Format dates with day-of-week using Python (LLMs are bad at date arithmetic)
+        start_str = event['start']
+        end_str = event['end']
+        
+        try:
+            # Handle full datetime (e.g., "2026-01-02T17:30:00-05:00")
+            if 'T' in start_str:
+                # Remove timezone suffix for parsing, handle various formats
+                start_clean = start_str.replace('Z', '+00:00')
+                end_clean = end_str.replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(start_clean)
+                end_dt = datetime.fromisoformat(end_clean)
+                # Format: "Friday, January 2 at 5:30 PM to 7:00 PM"
+                time_str = f"{start_dt.strftime('%A, %B %d at %I:%M %p')} to {end_dt.strftime('%I:%M %p')}"
+            else:
+                # All-day event (e.g., "2026-01-02")
+                start_dt = datetime.strptime(start_str, '%Y-%m-%d')
+                time_str = f"{start_dt.strftime('%A, %B %d')} (all day)"
+        except (ValueError, TypeError):
+            # Fallback to raw string if parsing fails
+            time_str = f"{start_str} to {end_str}"
+        
+        result += f"  Time: {time_str}\n"
         if event['location']:
             result += f"  Location: {event['location']}\n"
         if event['attendees']:
@@ -260,14 +284,18 @@ def delete_calendar_event(event_id: str) -> str:
 @tool
 def read_recent_emails(max_results: int = 10, days_back: int = 7) -> str:
     """
-    Read recent emails from inbox.
+    Read recent emails from inbox (all categories).
+    
+    This returns ALL emails regardless of Gmail category (primary, social, 
+    promotions, updates, forums). Use read_important_emails instead if the
+    user asks about "important" or "urgent" emails.
     
     Args:
         max_results: Maximum number of emails to fetch (default: 10)
         days_back: Only fetch emails from last N days (default: 7)
         
     Returns:
-        List of emails with subject, sender, and snippet
+        List of emails with subject, sender, snippet, and Gmail category
     """
     emails = _read_emails(
         user_email=get_current_user(),
@@ -278,6 +306,49 @@ def read_recent_emails(max_results: int = 10, days_back: int = 7) -> str:
         return "No emails found."
     
     result = f"Found {len(emails)} emails:\n"
+    for email in emails:
+        result += f"\n- **{email['subject']}**\n"
+        result += f"  From: {email['from']}\n"
+        result += f"  Date: {email['date']}\n"
+        result += f"  Category: {email.get('category', 'primary')}\n"
+        result += f"  {email['snippet'][:100]}...\n"
+        result += f"  ID: {email['id']}\n"
+    
+    # Mask PII in email content (addresses, SSN, cards, etc.)
+    return mask_pii(result)
+
+
+@tool
+def read_important_emails(max_results: int = 10, days_back: int = 7) -> str:
+    """
+    Read important emails from Primary inbox (excludes promotions, social, updates, forums).
+    
+    Use this tool when user asks about:
+    - "important emails"
+    - "emails that need attention" 
+    - "anything urgent in my inbox"
+    - "emails needing my review"
+    
+    This filters to Gmail's Primary category, which contains person-to-person 
+    conversations and emails Gmail considers most important.
+    
+    Args:
+        max_results: Maximum number of emails to fetch (default: 10)
+        days_back: Only fetch emails from last N days (default: 7)
+        
+    Returns:
+        List of important primary inbox emails with subject, sender, date, and snippet
+    """
+    emails = _read_emails(
+        user_email=get_current_user(),
+        max_results=max_results,
+        days_back=days_back,
+        category="primary",  # Filter to Primary inbox only
+    )
+    if not emails:
+        return "No important emails found in your Primary inbox."
+    
+    result = f"Found {len(emails)} important emails (Primary inbox):\n"
     for email in emails:
         result += f"\n- **{email['subject']}**\n"
         result += f"  From: {email['from']}\n"
@@ -1285,6 +1356,7 @@ WORKSPACE_TOOLS = [
     delete_calendar_event,
     # Gmail
     read_recent_emails,
+    read_important_emails,  # Primary inbox only (for "important emails" queries)
     search_emails,
     get_email_details,
     send_email,
