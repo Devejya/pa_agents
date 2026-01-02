@@ -1,22 +1,85 @@
 """
 Configuration settings for Yennifer API Service.
+
+In production, secrets are loaded from AWS Secrets Manager.
+In development, secrets are loaded from .env file or LocalStack.
 """
 
+import logging
+import os
 import secrets
 from functools import lru_cache
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_secret_keys(secrets: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize secret keys to snake_case to match pydantic field names.
+    
+    AWS Secrets Manager JSON might have keys like:
+    - POSTHOG_API_KEY (UPPER_CASE from env convention)
+    - posthog_api_key (already snake_case)
+    
+    Pydantic fields are snake_case, so we normalize all keys.
+    """
+    normalized = {}
+    for key, value in secrets.items():
+        # Convert UPPER_CASE to snake_case (e.g., POSTHOG_API_KEY -> posthog_api_key)
+        normalized_key = key.lower()
+        normalized[normalized_key] = value
+    return normalized
+
+
+def _load_secrets_from_aws() -> Dict[str, Any]:
+    """Load secrets from AWS Secrets Manager."""
+    from .secrets import get_secrets
+
+    secret_name = os.getenv(
+        "AWS_SECRET_NAME",
+        "yennifer/yennifer-api/production"
+    )
+    secrets = get_secrets(secret_name)
+    
+    # Log which keys were loaded (without values for security)
+    logger.info(f"Loaded secrets keys: {list(secrets.keys())}")
+    
+    # Normalize keys to snake_case to match pydantic field names
+    return _normalize_secret_keys(secrets)
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """
+    Application settings loaded from environment variables.
+
+    In production (ENVIRONMENT=production), settings are loaded from
+    AWS Secrets Manager. In development, settings come from .env file.
+    """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=".env" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def load_from_secrets_manager(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Load secrets from AWS Secrets Manager in production."""
+        if os.getenv("ENVIRONMENT") == "production":
+            try:
+                secrets_data = _load_secrets_from_aws()
+                # Merge secrets (secrets take precedence over env vars)
+                # This allows non-secret config to still come from env vars
+                return {**values, **secrets_data}
+            except Exception as e:
+                logger.error(f"Failed to load secrets from AWS: {e}")
+                raise
+        return values
 
     # Service
     service_name: str = "yennifer-api"
@@ -79,6 +142,25 @@ class Settings(BaseSettings):
     
     # S3 for cold storage tier (optional)
     chat_archive_bucket: str = ""  # e.g., yennifer-chat-archives
+    
+    # Google Custom Search API
+    google_cse_api_key: str = ""  # API key from Google Cloud Console
+    google_cse_id: str = ""  # Custom Search Engine ID from Programmable Search Engine
+    google_cse_max_results: int = 5  # Default number of results per search
+    google_cse_enabled: bool = True  # Feature flag to enable/disable web search
+    
+    # PostHog Analytics (same project as frontend waitlist)
+    posthog_api_key: str = ""  # Same key as VITE_PUBLIC_POSTHOG_KEY
+    posthog_host: str = "https://us.i.posthog.com"  # Same as VITE_PUBLIC_POSTHOG_HOST
+
+    @property
+    def web_search_available(self) -> bool:
+        """Check if web search is properly configured."""
+        return (
+            self.google_cse_enabled
+            and bool(self.google_cse_api_key)
+            and bool(self.google_cse_id)
+        )
 
     @property
     def cors_origins_list(self) -> List[str]:

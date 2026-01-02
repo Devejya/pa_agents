@@ -1,0 +1,40 @@
+# LocalStack for local development with AWS Secrets Manager
+# 
+# Usage:
+#   docker-compose -f docker-compose.localstack.yml up -d
+#
+# Then set in your shell or .env:
+#   export AWS_SECRETS_ENDPOINT_URL=http://localhost:4566
+#   export ENVIRONMENT=development
+#
+# To interact with LocalStack secrets:
+#   aws --endpoint-url=http://localhost:4566 secretsmanager list-secrets
+#   aws --endpoint-url=http://localhost:4566 secretsmanager get-secret-value --secret-id yennifer/yennifer-api/development
+
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: yennifer-localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=secretsmanager
+      - DEBUG=1
+      - PERSISTENCE=1
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "./localstack-init:/etc/localstack/init/ready.d"
+      - "localstack-data:/var/lib/localstack"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  localstack-data:
+    driver: local
+

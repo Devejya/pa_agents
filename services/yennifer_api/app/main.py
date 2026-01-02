@@ -30,6 +30,7 @@ from .core.config import get_settings
 from .core.scheduler import start_scheduler, stop_scheduler
 from .core.audit import init_audit_logger, shutdown_audit_logger
 from .core.pii_audit import init_pii_audit_logger
+from .core.analytics import init_analytics, shutdown_analytics
 from .db.connection import init_db, close_db, get_db_pool
 from .middleware import AuditMiddleware, PIIContextMiddleware
 from .jobs import register_all_jobs
@@ -76,10 +77,21 @@ async def lifespan(app: FastAPI):
     register_all_jobs()
     start_scheduler()
     
+    # Initialize PostHog analytics
+    logger.info("Initializing PostHog analytics...")
+    if init_analytics():
+        logger.info("PostHog analytics initialized")
+    else:
+        logger.warning("PostHog analytics not configured or failed to initialize")
+    
     yield
     
     # Shutdown
     logger.info("Shutting down Yennifer API Service...")
+    
+    # Shutdown PostHog analytics (flush pending events)
+    logger.info("Stopping PostHog analytics...")
+    shutdown_analytics()
     
     # Stop audit logger (flush pending entries)
     logger.info("Stopping audit logger...")

@@ -2,22 +2,84 @@
 Configuration settings for User Network Service.
 
 Uses pydantic-settings for environment variable loading.
+In production, secrets are loaded from AWS Secrets Manager.
+In development, secrets are loaded from .env file or LocalStack.
 """
 
+import logging
+import os
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Dict, Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_secret_keys(secrets: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize secret keys to snake_case to match pydantic field names.
+    
+    AWS Secrets Manager JSON might have keys like:
+    - DATABASE_URL (UPPER_CASE from env convention)
+    - database_url (already snake_case)
+    
+    Pydantic fields are snake_case, so we normalize all keys.
+    """
+    normalized = {}
+    for key, value in secrets.items():
+        # Convert UPPER_CASE to snake_case (e.g., DATABASE_URL -> database_url)
+        normalized_key = key.lower()
+        normalized[normalized_key] = value
+    return normalized
+
+
+def _load_secrets_from_aws() -> Dict[str, Any]:
+    """Load secrets from AWS Secrets Manager."""
+    from .secrets import get_secrets
+
+    secret_name = os.getenv(
+        "AWS_SECRET_NAME",
+        "yennifer/user-network/production"
+    )
+    secrets = get_secrets(secret_name)
+    
+    # Log which keys were loaded (without values for security)
+    logger.info(f"Loaded secrets keys: {list(secrets.keys())}")
+    
+    # Normalize keys to snake_case to match pydantic field names
+    return _normalize_secret_keys(secrets)
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """
+    Application settings loaded from environment variables.
+
+    In production (ENVIRONMENT=production), settings are loaded from
+    AWS Secrets Manager. In development, settings come from .env file.
+    """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=".env" if os.getenv("ENVIRONMENT") != "production" else None,
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def load_from_secrets_manager(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Load secrets from AWS Secrets Manager in production."""
+        if os.getenv("ENVIRONMENT") == "production":
+            try:
+                secrets_data = _load_secrets_from_aws()
+                # Merge secrets (secrets take precedence over env vars)
+                # This allows non-secret config to still come from env vars
+                return {**values, **secrets_data}
+            except Exception as e:
+                logger.error(f"Failed to load secrets from AWS: {e}")
+                raise
+        return values
 
     # Service
     service_name: str = "user-network"

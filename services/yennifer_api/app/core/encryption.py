@@ -5,6 +5,11 @@ Key Hierarchy:
 - KEK (Key Encryption Key): AWS KMS CMK - never leaves KMS
 - DEK (Data Encryption Key): Per-user AES-256 key, encrypted by KEK, stored in users table
 
+Legacy Support:
+- Data encrypted before KMS migration used a static ENCRYPTION_KEY (Fernet)
+- The decrypt_for_user function tries KMS DEK first, then falls back to legacy key
+- New data is always encrypted with KMS DEK
+
 Usage:
     from app.core.encryption import UserEncryption
     
@@ -20,7 +25,7 @@ Usage:
     # Encrypt data for user
     ciphertext = encryption.encrypt_for_user(dek, "sensitive data")
     
-    # Decrypt data for user
+    # Decrypt data for user (tries KMS DEK first, falls back to legacy key)
     plaintext = encryption.decrypt_for_user(dek, ciphertext)
 """
 
@@ -36,6 +41,103 @@ from botocore.exceptions import ClientError
 from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
+
+
+# --- Legacy Encryption Support ---
+# Data encrypted before KMS migration used ENCRYPTION_KEY from .env
+# We try to decrypt with this as a fallback if KMS DEK fails
+
+_legacy_fernet: Optional[Fernet] = None
+_legacy_key_checked: bool = False
+
+
+def _get_legacy_fernet() -> Optional[Fernet]:
+    """
+    Get a Fernet instance for legacy decryption.
+    
+    Returns None if no legacy key is configured.
+    """
+    global _legacy_fernet, _legacy_key_checked
+    
+    if _legacy_key_checked:
+        return _legacy_fernet
+    
+    _legacy_key_checked = True
+    
+    # Try to get legacy key from config
+    try:
+        from .config import get_settings
+        settings = get_settings()
+        
+        if settings.encryption_key:
+            key = settings.encryption_key
+            if isinstance(key, str):
+                key = key.encode()
+            _legacy_fernet = Fernet(key)
+            logger.info("Legacy ENCRYPTION_KEY loaded for backwards compatibility")
+        else:
+            logger.debug("No legacy ENCRYPTION_KEY configured")
+    except Exception as e:
+        logger.warning(f"Could not load legacy encryption key: {e}")
+    
+    return _legacy_fernet
+
+
+def _try_legacy_decrypt(ciphertext: bytes) -> Optional[str]:
+    """
+    Try to decrypt data using the legacy ENCRYPTION_KEY.
+    
+    Returns decrypted string if successful, None if no legacy key or decryption fails.
+    """
+    fernet = _get_legacy_fernet()
+    if fernet is None:
+        return None
+    
+    try:
+        return fernet.decrypt(ciphertext).decode("utf-8")
+    except InvalidToken:
+        return None
+    except Exception:
+        return None
+
+
+def _is_plaintext_json(data: bytes) -> bool:
+    """
+    Check if data is unencrypted JSON (data integrity bug workaround).
+    
+    Some data was accidentally stored without encryption. This detects it
+    so we can return it as-is rather than failing decryption.
+    """
+    if not data:
+        return False
+    
+    # JSON starts with { or [
+    try:
+        first_char = data[0:1]
+        if first_char in (b'{', b'['):
+            # Try to decode as UTF-8 and parse as JSON
+            import json
+            text = data.decode('utf-8')
+            json.loads(text)  # Validates it's actually JSON
+            return True
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        pass
+    
+    return False
+
+
+def _handle_plaintext_data(ciphertext: bytes) -> Optional[str]:
+    """
+    Handle data that was stored as plaintext (unencrypted).
+    
+    This is a workaround for a data integrity bug where some records
+    were inserted without encryption. Returns the plaintext string
+    if detected, None otherwise.
+    """
+    if _is_plaintext_json(ciphertext):
+        logger.warning("Found UNENCRYPTED plaintext data in encrypted column! Consider re-encrypting.")
+        return ciphertext.decode('utf-8')
+    return None
 
 
 class EncryptionError(Exception):
@@ -159,7 +261,12 @@ class UserEncryption:
     
     def decrypt_for_user(self, user_dek: bytes, ciphertext: bytes) -> str:
         """
-        Decrypt data using a user's DEK.
+        Decrypt data using a user's DEK, with fallback to legacy encryption.
+        
+        Tries:
+        1. Decrypt with user's KMS-based DEK (current method)
+        2. If that fails, try legacy ENCRYPTION_KEY (for data encrypted before KMS migration)
+        3. If that fails, check if data is plaintext JSON (data integrity bug workaround)
         
         Args:
             user_dek: The decrypted 32-byte DEK
@@ -169,15 +276,29 @@ class UserEncryption:
             Decrypted string
         
         Raises:
-            DecryptionError: If decryption fails (wrong key, corrupted data, etc.)
+            DecryptionError: If decryption fails with all methods
         """
+        # Try with user's KMS-based DEK first
         try:
             fernet_key = self._dek_to_fernet_key(user_dek)
             f = Fernet(fernet_key)
             return f.decrypt(ciphertext).decode("utf-8")
-        except InvalidToken as e:
+        except InvalidToken:
+            # KMS DEK failed, try legacy key
+            logger.debug("KMS DEK decryption failed, trying legacy key...")
+            legacy_result = _try_legacy_decrypt(ciphertext)
+            if legacy_result is not None:
+                logger.info("Decrypted using legacy ENCRYPTION_KEY (consider re-encrypting)")
+                return legacy_result
+            
+            # Legacy key failed, check if it's plaintext (data integrity bug)
+            plaintext_result = _handle_plaintext_data(ciphertext)
+            if plaintext_result is not None:
+                return plaintext_result
+            
+            # All methods failed
             logger.error("Decryption failed: invalid token (wrong key or corrupted data)")
-            raise DecryptionError("Failed to decrypt data: invalid token") from e
+            raise DecryptionError("Failed to decrypt data: invalid token")
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
             raise DecryptionError(f"Failed to decrypt data: {e}") from e
@@ -199,7 +320,7 @@ class UserEncryption:
     
     def decrypt_bytes_for_user(self, user_dek: bytes, ciphertext: bytes) -> bytes:
         """
-        Decrypt binary data using a user's DEK.
+        Decrypt binary data using a user's DEK, with fallback to legacy encryption.
         
         Args:
             user_dek: The decrypted 32-byte DEK
@@ -209,15 +330,33 @@ class UserEncryption:
             Decrypted bytes
         
         Raises:
-            DecryptionError: If decryption fails
+            DecryptionError: If decryption fails with all methods
         """
+        # Try with user's KMS-based DEK first
         try:
             fernet_key = self._dek_to_fernet_key(user_dek)
             f = Fernet(fernet_key)
             return f.decrypt(ciphertext)
-        except InvalidToken as e:
+        except InvalidToken:
+            # KMS DEK failed, try legacy key
+            logger.debug("KMS DEK decryption failed for bytes, trying legacy key...")
+            fernet = _get_legacy_fernet()
+            if fernet is not None:
+                try:
+                    result = fernet.decrypt(ciphertext)
+                    logger.info("Decrypted bytes using legacy ENCRYPTION_KEY")
+                    return result
+                except InvalidToken:
+                    pass
+            
+            # Legacy key failed, check if it's plaintext (data integrity bug)
+            plaintext_result = _handle_plaintext_data(ciphertext)
+            if plaintext_result is not None:
+                return plaintext_result.encode('utf-8')
+            
+            # All methods failed
             logger.error("Decryption failed: invalid token")
-            raise DecryptionError("Failed to decrypt data: invalid token") from e
+            raise DecryptionError("Failed to decrypt data: invalid token")
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
             raise DecryptionError(f"Failed to decrypt data: {e}") from e

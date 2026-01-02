@@ -9,6 +9,7 @@ to the database with per-user encryption.
 import asyncio
 import contextvars
 import logging
+import time
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
@@ -20,8 +21,21 @@ from ..core.agent import YenniferAssistant
 from ..core.auth import TokenData, get_current_user
 from ..core.chat_cache import get_chat_cache
 from ..core.google_services import load_user_tokens
+from ..core.workspace_tools import WORKSPACE_TOOLS
+from ..core.memory_tools import MEMORY_TOOLS
+from ..core.entity_resolution_tools import ENTITY_RESOLUTION_TOOLS
+from ..core.web_search_tools import WEB_SEARCH_TOOLS
 from ..core.pii import unmask_pii, get_pii_context
 from ..core.pii_audit import get_pii_audit_logger, flush_pii_audit
+from ..core.analytics import (
+    track_message_sent,
+    track_pii_masked,
+    track_session_created,
+    track_session_restored,
+    track_tool_called,
+    set_tracking_user,
+    get_tool_category,
+)
 from ..db import get_db_pool, ChatRepository
 from ..middleware.audit import get_request_id
 
@@ -39,10 +53,33 @@ def get_or_create_session(user_email: str, user_id: Optional[UUID] = None) -> Ye
     """Get existing session or create new one for the user."""
     if user_email not in _sessions:
         _sessions[user_email] = YenniferAssistant(user_email=user_email, user_id=user_id)
-    else:
-        # Ensure user email and ID are set (in case session was created without them)
-        _sessions[user_email].set_user(user_email, user_id)
+    # Always set user to ensure global _current_user_email is set
+    # (Critical after server restarts when creating new sessions)
+    _sessions[user_email].set_user(user_email, user_id)
     return _sessions[user_email]
+
+
+def _build_tool_registry() -> Dict[str, Any]:
+    """Build a registry mapping tool names to tool functions for re-execution."""
+    registry = {}
+    all_tools = WORKSPACE_TOOLS + MEMORY_TOOLS + ENTITY_RESOLUTION_TOOLS + WEB_SEARCH_TOOLS
+    for tool in all_tools:
+        # LangChain tools have a .name attribute
+        if hasattr(tool, 'name'):
+            registry[tool.name] = tool
+    return registry
+
+
+# Cached tool registry (built once on module load)
+_TOOL_REGISTRY: Optional[Dict[str, Any]] = None
+
+
+def get_tool_registry() -> Dict[str, Any]:
+    """Get the tool registry, building it if needed."""
+    global _TOOL_REGISTRY
+    if _TOOL_REGISTRY is None:
+        _TOOL_REGISTRY = _build_tool_registry()
+    return _TOOL_REGISTRY
 
 
 # ============== Request/Response Models ==============
@@ -93,6 +130,209 @@ class SessionListResponse(BaseModel):
 
 
 # ============== Helper Functions ==============
+
+# Read-only tools that are safe to re-execute on session restore
+# These tools only fetch data and have no side effects
+READ_ONLY_TOOLS = {
+    # Memory/User Network read tools
+    "get_user_memories",
+    "get_user_interests",
+    "get_upcoming_important_dates",
+    "find_person_by_relationship",
+    "get_person_interests",
+    "get_important_dates_for_person",
+    "get_person_notes",
+    "get_upcoming_person_notes",
+    "find_person_candidates",
+    # Workspace read tools
+    "get_current_datetime",
+    "get_my_profile",
+    "lookup_contact_email",
+    "list_calendar_events",
+    "read_recent_emails",
+    "search_emails",
+    "get_email_details",
+    "list_my_contacts",
+    "search_my_contacts",
+    "list_drive_files",
+    "search_drive",
+    "list_spreadsheets",
+    "search_spreadsheets",
+    "read_spreadsheet_data",
+    "list_google_docs",
+    "read_google_doc",
+    "list_presentations",
+    "read_presentation_content",
+    # Web search (read-only, safe to retry)
+    "web_search",
+}
+
+
+def repair_incomplete_tool_calls(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Repair chat history that has AIMessages with tool_calls but missing ToolMessages.
+    
+    This is a synchronous fallback that uses placeholders.
+    For async context (where tools can be re-executed), use repair_incomplete_tool_calls_async.
+    
+    Args:
+        history: List of message dicts with role, content, tool_calls, tool_call_id
+        
+    Returns:
+        Repaired history with placeholder ToolMessages for orphan tool_calls
+    """
+    # First pass: collect all tool_call IDs from AIMessages and existing ToolMessages
+    expected_tool_call_ids = {}  # tool_call_id -> (message_index, tool_call_info)
+    existing_tool_call_ids = set()
+    
+    for i, msg in enumerate(history):
+        if msg["role"] == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id")
+                if tc_id:
+                    expected_tool_call_ids[tc_id] = (i, tc)
+        elif msg["role"] == "tool" and msg.get("tool_call_id"):
+            existing_tool_call_ids.add(msg["tool_call_id"])
+    
+    # Find orphan tool_calls (in AIMessage but no corresponding ToolMessage)
+    orphan_ids = set(expected_tool_call_ids.keys()) - existing_tool_call_ids
+    
+    if not orphan_ids:
+        return history  # No repairs needed
+    
+    # Log the repair
+    orphan_names = [expected_tool_call_ids[tc_id][1].get("name", "unknown") for tc_id in orphan_ids]
+    logger.warning(
+        f"Repairing {len(orphan_ids)} orphan tool_calls in chat history: {orphan_names}. "
+        f"This usually happens after a server restart during tool execution."
+    )
+    
+    # Build repaired history by inserting placeholder ToolMessages after orphan AIMessages
+    repaired = []
+    for i, msg in enumerate(history):
+        repaired.append(msg)
+        
+        # After an AIMessage with orphan tool_calls, insert placeholder ToolMessages
+        if msg["role"] == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id")
+                if tc_id in orphan_ids:
+                    tool_name = tc.get("name", "unknown")
+                    placeholder = {
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": f"[Tool '{tool_name}' execution was interrupted by server restart. Please retry the request.]",
+                    }
+                    repaired.append(placeholder)
+    
+    return repaired
+
+
+async def repair_incomplete_tool_calls_async(
+    history: List[Dict[str, Any]],
+    tool_registry: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Repair chat history by re-executing read-only tools and using placeholders for writes.
+    
+    This is smarter than the sync version - it actually re-runs safe tools to restore
+    accurate context, while using placeholders for write operations (which could cause duplicates).
+    
+    Args:
+        history: List of message dicts with role, content, tool_calls, tool_call_id
+        tool_registry: Dict mapping tool names to tool functions
+        
+    Returns:
+        Repaired history with actual results for read-only tools, placeholders for writes
+    """
+    # First pass: collect all tool_call IDs
+    expected_tool_call_ids = {}  # tool_call_id -> tool_call_info
+    existing_tool_call_ids = set()
+    
+    for msg in history:
+        if msg["role"] == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id")
+                if tc_id:
+                    expected_tool_call_ids[tc_id] = tc
+        elif msg["role"] == "tool" and msg.get("tool_call_id"):
+            existing_tool_call_ids.add(msg["tool_call_id"])
+    
+    # Find orphan tool_calls
+    orphan_ids = set(expected_tool_call_ids.keys()) - existing_tool_call_ids
+    
+    if not orphan_ids:
+        return history  # No repairs needed
+    
+    # Categorize orphans
+    read_only_orphans = []
+    write_orphans = []
+    for tc_id in orphan_ids:
+        tc = expected_tool_call_ids[tc_id]
+        tool_name = tc.get("name", "unknown")
+        if tool_name in READ_ONLY_TOOLS:
+            read_only_orphans.append((tc_id, tc))
+        else:
+            write_orphans.append((tc_id, tc))
+    
+    logger.warning(
+        f"Repairing {len(orphan_ids)} orphan tool_calls: "
+        f"{len(read_only_orphans)} read-only (will re-execute), "
+        f"{len(write_orphans)} write (will use placeholders)"
+    )
+    
+    # Re-execute read-only tools and cache results
+    tool_results = {}  # tc_id -> result content
+    
+    for tc_id, tc in read_only_orphans:
+        tool_name = tc.get("name", "unknown")
+        tool_args = tc.get("args", {})
+        
+        if tool_name in tool_registry:
+            try:
+                tool_func = tool_registry[tool_name]
+                # Call the tool with its original arguments
+                # Use functools.partial or default args to capture variables correctly
+                def invoke_tool(func=tool_func, args=tool_args):
+                    return func.invoke(args)
+                result = await asyncio.get_event_loop().run_in_executor(None, invoke_tool)
+                tool_results[tc_id] = str(result)
+                logger.info(f"Re-executed read-only tool '{tool_name}' successfully")
+            except Exception as e:
+                logger.warning(f"Failed to re-execute tool '{tool_name}': {e}")
+                tool_results[tc_id] = f"[Tool '{tool_name}' re-execution failed: {str(e)[:100]}. Please retry.]"
+        else:
+            tool_results[tc_id] = f"[Tool '{tool_name}' not found in registry. Please retry.]"
+    
+    # Build repaired history
+    repaired = []
+    for msg in history:
+        repaired.append(msg)
+        
+        if msg["role"] == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id")
+                if tc_id in orphan_ids:
+                    tool_name = tc.get("name", "unknown")
+                    
+                    if tc_id in tool_results:
+                        # Read-only tool - use re-executed result
+                        content = tool_results[tc_id]
+                    else:
+                        # Write tool - use placeholder
+                        content = (
+                            f"[Tool '{tool_name}' was interrupted by server restart. "
+                            f"This is a write operation - please verify and retry if needed to avoid duplicates.]"
+                        )
+                    
+                    repaired.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": content,
+                    })
+    
+    return repaired
+
 
 async def persist_message(
     user_id: UUID,
@@ -190,8 +430,21 @@ async def restore_agent_context_from_db(
                     entry["tool_call_id"] = m["tool_call_id"]
                 history.append(entry)
             
+            # Repair history if there are orphan tool_calls (from interrupted sessions)
+            # This prevents LangChain "AIMessages with tool_calls without ToolMessage" errors
+            # Use async version to re-execute read-only tools for accurate context
+            history = await repair_incomplete_tool_calls_async(history, get_tool_registry())
+            
             agent.set_history(history)
             logger.info(f"Restored {len(messages)} messages into agent context for user {user_id}")
+            
+            # Track session restored event in PostHog
+            track_session_restored(
+                user_id=user_id,
+                session_id=str(session_id),
+                message_count=len(messages),
+            )
+            
             return True
             
         return False
@@ -219,6 +472,9 @@ async def send_message(
     
     Requires authentication via JWT token.
     """
+    # Start timing for analytics
+    start_time = time.time()
+    
     try:
         # Load user tokens into cache for sync tool access
         tokens = await load_user_tokens(current_user.email)
@@ -228,6 +484,9 @@ async def send_message(
         
         user_id = current_user.user_id  # May be None for legacy users
         session = get_or_create_session(current_user.email, user_id)
+        
+        # Set user ID for tool tracking context
+        set_tracking_user(user_id)
         
         # Load user context (memories, interests) for personalization
         if user_id:
@@ -311,6 +570,17 @@ async def send_message(
                 )
                 # Flush to database
                 await flush_pii_audit()
+            
+            # Track PII masking event in PostHog
+            track_pii_masked(
+                user_id=user_id,
+                total_masked=pii_stats.get("total", 0),
+                emails_masked=pii_stats.get("email", 0),
+                phones_masked=pii_stats.get("phone", 0),
+                ssn_masked=pii_stats.get("ssn", 0),
+                cards_masked=pii_stats.get("card", 0),
+                endpoint="/api/v1/chat",
+            )
         
         # Unmask PII in response before returning to user
         # The LLM saw masked data ([CARD_1], [EMAIL_1], etc.)
@@ -379,6 +649,36 @@ async def send_message(
                     
             except Exception as e:
                 logger.error(f"Failed to persist agent messages: {e}")
+        
+        # Calculate response time and count tool calls for analytics
+        response_time_ms = int((time.time() - start_time) * 1000)
+        new_messages = session.get_last_new_messages()
+        tool_count = sum(1 for msg in new_messages if isinstance(msg, ToolMessage))
+        has_tool_calls = tool_count > 0
+        
+        # Track individual tool calls from AIMessage.tool_calls
+        for msg in new_messages:
+            if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_name = tc.get("name", "unknown")
+                    track_tool_called(
+                        user_id=user_id,
+                        tool_name=tool_name,
+                        tool_category=get_tool_category(tool_name),
+                        execution_time_ms=None,  # Not available at this level
+                        success=True,  # Assume success if we got here
+                        error_message=None,
+                    )
+        
+        # Track message sent event in PostHog
+        track_message_sent(
+            user_id=user_id,
+            session_id=str(db_session_id) if db_session_id else None,
+            message_length=len(request.message),
+            has_tool_calls=has_tool_calls,
+            tool_count=tool_count,
+            response_time_ms=response_time_ms,
+        )
         
         return ChatResponse(
             response=response,
@@ -451,7 +751,18 @@ async def get_chat_history(
             # Sync in-memory agent with history for context consistency
             if messages:
                 agent = get_or_create_session(current_user.email, user_id)
-                history = [{"role": m["role"], "content": m["content"]} for m in messages]
+                # Include tool_calls and tool_call_id for proper LLM context
+                history = []
+                for m in messages:
+                    entry: Dict[str, Any] = {"role": m["role"], "content": m["content"]}
+                    if m.get("tool_calls"):
+                        entry["tool_calls"] = m["tool_calls"]
+                    if m.get("tool_call_id"):
+                        entry["tool_call_id"] = m["tool_call_id"]
+                    history.append(entry)
+                # Repair any orphan tool_calls from interrupted sessions
+                # Use async version to re-execute read-only tools
+                history = await repair_incomplete_tool_calls_async(history, get_tool_registry())
                 agent.set_history(history)
                 logger.debug(f"Synced {len(messages)} messages to agent for {current_user.email}")
             
@@ -642,6 +953,12 @@ async def create_session(
         chat_repo = ChatRepository(pool)
         
         session = await chat_repo.create_session(user_id, title)
+        
+        # Track session created event in PostHog
+        track_session_created(
+            user_id=user_id,
+            session_id=str(session["id"]),
+        )
         
         # Also clear the in-memory session for fresh start
         if current_user.email in _sessions:

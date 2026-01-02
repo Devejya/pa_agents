@@ -9,6 +9,7 @@ Handles:
 - Person merging
 """
 
+import json
 import logging
 import uuid
 import re
@@ -20,6 +21,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from app.core.config import get_settings
+from app.core.encryption import get_encryption
 from app.models.person import (
     PersonCreateInput,
     PersonCandidate,
@@ -564,38 +566,90 @@ def create_person_with_data(
                     'user', data.relationship_to_user, category, initial_strength
                 ))
             
-            # Save interests
+            # Save interests (properly encrypted)
             interests_saved = 0
-            for interest_name in data.get_interests_list():
-                cur.execute("""
-                    INSERT INTO interests (user_id, person_id, interest_level, details_encrypted)
-                    VALUES (%s, %s, %s, %s)
-                """, (user_id, person_id, 70, f'{{"name": "{interest_name}"}}'))
-                interests_saved += 1
+            interests_to_save = data.get_interests_list()
+            if interests_to_save:
+                # Get user's DEK for encryption
+                cur.execute(
+                    "SELECT encryption_key_blob FROM users WHERE id = %s",
+                    (user_id,)
+                )
+                user_row = cur.fetchone()
+                if user_row and user_row['encryption_key_blob']:
+                    encryption = get_encryption()
+                    user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
+                    
+                    for interest_name in interests_to_save:
+                        details = {"name": interest_name}
+                        details_encrypted = encryption.encrypt_for_user(user_dek, json.dumps(details))
+                        cur.execute("""
+                            INSERT INTO interests (user_id, person_id, interest_level, details_encrypted)
+                            VALUES (%s, %s, %s, %s)
+                        """, (user_id, person_id, 70, details_encrypted))
+                        interests_saved += 1
+                else:
+                    logger.warning(f"Cannot save interests for user {user_id}: no encryption key")
             
-            # Save birthday if provided
+            # Save birthday if provided (encrypted)
             if data.birthday_date:
-                cur.execute("""
-                    INSERT INTO important_dates (
-                        user_id, person_id, date_value, is_recurring, title_encrypted
+                # Need user_dek for encryption - get it if not already fetched
+                if 'user_dek' not in locals():
+                    cur.execute(
+                        "SELECT encryption_key_blob FROM users WHERE id = %s",
+                        (user_id,)
                     )
-                    VALUES (%s, %s, %s, true, %s)
-                """, (user_id, person_id, data.birthday_date, 'Birthday'))
+                    user_row = cur.fetchone()
+                    if user_row and user_row['encryption_key_blob']:
+                        encryption = get_encryption()
+                        user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
+                
+                if 'user_dek' in locals():
+                    title_encrypted = encryption.encrypt_for_user(user_dek, 'Birthday')
+                    cur.execute("""
+                        INSERT INTO important_dates (
+                            user_id, person_id, date_value, is_recurring, title_encrypted
+                        )
+                        VALUES (%s, %s, %s, true, %s)
+                    """, (user_id, person_id, data.birthday_date, title_encrypted))
+                else:
+                    logger.warning(f"Cannot save birthday for user {user_id}: no encryption key")
             
-            # Save other important date if provided
+            # Save other important date if provided (encrypted)
             if data.important_date:
-                is_recurring = len(data.important_date) == 5  # MM-DD format
-                cur.execute("""
-                    INSERT INTO important_dates (
-                        user_id, person_id, date_value, is_recurring, 
-                        title_encrypted, notes_encrypted
+                # Need user_dek for encryption - get it if not already fetched
+                if 'user_dek' not in locals():
+                    cur.execute(
+                        "SELECT encryption_key_blob FROM users WHERE id = %s",
+                        (user_id,)
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (
-                    user_id, person_id, data.important_date, is_recurring,
-                    data.important_date_type or 'Important Date',
-                    data.important_date_notes
-                ))
+                    user_row = cur.fetchone()
+                    if user_row and user_row['encryption_key_blob']:
+                        encryption = get_encryption()
+                        user_dek = encryption.decrypt_user_dek(bytes(user_row['encryption_key_blob']))
+                
+                if 'user_dek' in locals():
+                    is_recurring = len(data.important_date) == 5  # MM-DD format
+                    title_encrypted = encryption.encrypt_for_user(
+                        user_dek, 
+                        data.important_date_type or 'Important Date'
+                    )
+                    notes_encrypted = None
+                    if data.important_date_notes:
+                        notes_encrypted = encryption.encrypt_for_user(user_dek, data.important_date_notes)
+                    
+                    cur.execute("""
+                        INSERT INTO important_dates (
+                            user_id, person_id, date_value, is_recurring, 
+                            title_encrypted, notes_encrypted
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        user_id, person_id, data.important_date, is_recurring,
+                        title_encrypted, notes_encrypted
+                    ))
+                else:
+                    logger.warning(f"Cannot save important date for user {user_id}: no encryption key")
             
             conn.commit()
             

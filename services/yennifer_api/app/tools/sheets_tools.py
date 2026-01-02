@@ -127,6 +127,7 @@ def add_sheet_to_spreadsheet(
 
 def list_spreadsheets(
     user_email: str,
+    search_query: Optional[str] = None,
     max_results: int = 20,
 ) -> list[dict]:
     """
@@ -134,6 +135,7 @@ def list_spreadsheets(
     
     Args:
         user_email: User's email for authentication
+        search_query: Optional name search term (case-insensitive partial match)
         max_results: Maximum number of spreadsheets to return
         
     Returns:
@@ -141,9 +143,22 @@ def list_spreadsheets(
     """
     service = get_drive_service(user_email)
     
+    # Build query
+    query_parts = [
+        "mimeType='application/vnd.google-apps.spreadsheet'",
+        "trashed=false",
+    ]
+    
+    # Add name search if provided
+    if search_query:
+        # Google Drive API uses 'name contains' for partial matching
+        query_parts.append(f"name contains '{search_query}'")
+    
+    query = " and ".join(query_parts)
+    
     results = service.files().list(
         pageSize=max_results,
-        q="mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+        q=query,
         fields="files(id, name, createdTime, modifiedTime, webViewLink)",
         orderBy="modifiedTime desc",
     ).execute()
@@ -172,31 +187,73 @@ def read_spreadsheet(
     
     Args:
         user_email: User's email for authentication
-        spreadsheet_id: Spreadsheet ID
+        spreadsheet_id: Spreadsheet ID (the long alphanumeric string from the URL)
         range_name: Sheet and range to read (e.g., "Sheet1!A1:D10")
         
     Returns:
         Spreadsheet data including values
+        
+    Raises:
+        ValueError: If spreadsheet not found or access denied
     """
+    from googleapiclient.errors import HttpError
+    
     service = get_sheets_service(user_email)
     
-    # Get spreadsheet metadata
-    spreadsheet = service.spreadsheets().get(
-        spreadsheetId=spreadsheet_id,
-    ).execute()
+    try:
+        # Get spreadsheet metadata
+        spreadsheet = service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+        ).execute()
+    except HttpError as e:
+        if e.resp.status == 404:
+            raise ValueError(
+                f"Spreadsheet not found with ID '{spreadsheet_id}'. "
+                f"Use list_spreadsheets tool first to find the correct spreadsheet ID."
+            )
+        elif e.resp.status == 400:
+            raise ValueError(
+                f"Invalid spreadsheet ID format: '{spreadsheet_id}'. "
+                f"The spreadsheet_id should be the long alphanumeric string from the URL "
+                f"(e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'). "
+                f"Use list_spreadsheets tool to find the correct ID."
+            )
+        elif e.resp.status == 403:
+            raise ValueError(
+                f"Access denied to spreadsheet '{spreadsheet_id}'. "
+                f"The user may not have permission to access this spreadsheet."
+            )
+        else:
+            raise ValueError(f"Error accessing spreadsheet: {e}")
     
-    # Get values
-    result = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=range_name,
-    ).execute()
+    # Get available sheet names for better error messages
+    available_sheets = [s.get("properties", {}).get("title") for s in spreadsheet.get("sheets", [])]
+    
+    try:
+        # Get values
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=range_name,
+        ).execute()
+    except HttpError as e:
+        if e.resp.status == 400:
+            # Extract sheet name from range (e.g., "MySheet!A1:D10" -> "MySheet")
+            requested_sheet = range_name.split("!")[0] if "!" in range_name else range_name
+            raise ValueError(
+                f"Invalid range '{range_name}'. "
+                f"Sheet '{requested_sheet}' may not exist. "
+                f"Available sheets in this spreadsheet: {available_sheets}. "
+                f"Try using one of these sheet names in your range."
+            )
+        else:
+            raise ValueError(f"Error reading spreadsheet data: {e}")
     
     values = result.get("values", [])
     
     return {
         "spreadsheet_id": spreadsheet_id,
         "title": spreadsheet.get("properties", {}).get("title"),
-        "sheets": [s.get("properties", {}).get("title") for s in spreadsheet.get("sheets", [])],
+        "sheets": available_sheets,
         "range": result.get("range"),
         "values": values,
         "row_count": len(values),

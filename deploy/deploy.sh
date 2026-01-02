@@ -117,7 +117,13 @@ if $DEPLOY_CHAT_API; then
     cp -r "$LOCAL_DIR/services/yennifer_api/app/"* /tmp/yennifer-deploy/yennifer_api/app/
     cp "$LOCAL_DIR/services/yennifer_api/requirements.txt" /tmp/yennifer-deploy/yennifer_api/
     
-    # Note: .env file should be created/updated manually on the server
+    # Copy scripts directory (diagnostic tools)
+    if [ -d "$LOCAL_DIR/services/yennifer_api/scripts" ]; then
+        mkdir -p /tmp/yennifer-deploy/yennifer_api/scripts/
+        cp -r "$LOCAL_DIR/services/yennifer_api/scripts/"* /tmp/yennifer-deploy/yennifer_api/scripts/
+    fi
+    
+    # Note: Secrets are loaded from AWS Secrets Manager (yennifer/yennifer-api/production)
 fi
 
 # Package agent tools (required by chat API)
@@ -197,10 +203,10 @@ if [ -d "yennifer_api/app" ]; then
     pip install -r requirements.txt
     deactivate
     
-    # Check for .env file
-    if [ ! -f ".env" ]; then
-        echo "⚠️  Please create /var/www/yennifer/yennifer_api/.env"
-        echo "   Required: OPENAI_API_KEY, USER_NETWORK_URL, USER_NETWORK_API_KEY"
+    # Remove old .env file if exists (secrets now loaded from AWS Secrets Manager)
+    if [ -f ".env" ]; then
+        echo "⚠️  Found .env file - secrets now loaded from AWS Secrets Manager"
+        echo "   Consider removing: /var/www/yennifer/yennifer_api/.env"
     fi
     
     cd ..
@@ -238,9 +244,10 @@ if [ -d "user_network/src" ]; then
     pip install -r requirements.txt
     deactivate
     
-    if [ ! -f ".env" ]; then
-        echo "⚠️  Please create /var/www/yennifer/user_network/.env"
-        echo "   Required: DATABASE_URL, API_KEYS"
+    # Remove old .env file if exists (secrets now loaded from AWS Secrets Manager)
+    if [ -f ".env" ]; then
+        echo "⚠️  Found .env file - secrets now loaded from AWS Secrets Manager"
+        echo "   Consider removing: /var/www/yennifer/user_network/.env"
     fi
     
     cd ..
@@ -296,12 +303,15 @@ $DEPLOY_USER_NETWORK && echo "  ✓ User Network Service (port 8001)"
 $DEPLOY_AGENT && echo "  ✓ Agent tools"
 $DEPLOY_WAITLIST && echo "  ✓ Waitlist API (port 3001)"
 echo ""
+echo "🔐 Secrets loaded from AWS Secrets Manager:"
+echo "   - yennifer/yennifer-api/production (Chat API)"
+echo "   - yennifer/user-network/production (User Network)"
+echo ""
 echo "Next steps:"
 echo "1. SSH into EC2 and verify services: pm2 list"
-echo "2. Create/update .env files if needed:"
-echo "   - /var/www/yennifer/yennifer_api/.env (OPENAI_API_KEY required)"
-echo "   - /var/www/yennifer/user_network/.env"
-echo "3. Test endpoints:"
+echo "2. Verify AWS IAM role has secretsmanager:GetSecretValue permission"
+echo "3. Update secrets in AWS Secrets Manager Console if needed"
+echo "4. Test endpoints:"
 echo "   - https://yennifer.ai/ (webapp)"
 echo "   - https://yennifer.ai/api/v1/chat/{user_id} (chat API)"
 echo "   - https://yennifer.ai/network/health (user network)"

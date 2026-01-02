@@ -665,7 +665,7 @@ def list_spreadsheets() -> str:
     List Google Sheets spreadsheets.
     
     Returns:
-        List of spreadsheets
+        List of spreadsheets with their IDs (needed for read_spreadsheet_data)
     """
     sheets = _list_spreadsheets(user_email=get_current_user())
     if not sheets:
@@ -679,24 +679,65 @@ def list_spreadsheets() -> str:
 
 
 @tool
+def search_spreadsheets(search_term: str) -> str:
+    """
+    Search for Google Sheets spreadsheets by name.
+    
+    IMPORTANT: Always use this tool FIRST before read_spreadsheet_data
+    when the user mentions a spreadsheet by name. This returns the
+    spreadsheet ID needed for reading data.
+    
+    Args:
+        search_term: Name or partial name to search for (case-insensitive)
+        
+    Returns:
+        Matching spreadsheets with their IDs
+    """
+    sheets = _list_spreadsheets(
+        user_email=get_current_user(),
+        search_query=search_term,
+    )
+    if not sheets:
+        return f"No spreadsheets found matching '{search_term}'. Try list_spreadsheets to see all available spreadsheets."
+    
+    result = f"Spreadsheets matching '{search_term}':\n"
+    for s in sheets:
+        result += f"\n- **{s['name']}**\n"
+        result += f"  ID: {s['id']}\n"
+    
+    result += "\n💡 Use the ID above with read_spreadsheet_data to access the spreadsheet."
+    return result
+
+
+@tool
 def read_spreadsheet_data(spreadsheet_id: str, range_name: str = "Sheet1") -> str:
     """
     Read data from a Google Sheets spreadsheet.
     
+    IMPORTANT: You must use the actual spreadsheet ID (a long alphanumeric string),
+    NOT the spreadsheet name. If you only have the name, use search_spreadsheets
+    first to find the ID.
+    
     Args:
-        spreadsheet_id: Spreadsheet ID
-        range_name: Sheet and range (e.g., "Sheet1!A1:D10")
+        spreadsheet_id: The spreadsheet ID (from search_spreadsheets or list_spreadsheets)
+        range_name: Sheet and range (e.g., "Sheet1!A1:D10" or just "Sheet1" for whole sheet)
         
     Returns:
         Spreadsheet data as text
     """
-    data = _read_spreadsheet(
-        user_email=get_current_user(),
-        spreadsheet_id=spreadsheet_id,
-        range_name=range_name,
-    )
+    try:
+        data = _read_spreadsheet(
+            user_email=get_current_user(),
+            spreadsheet_id=spreadsheet_id,
+            range_name=range_name,
+        )
+    except ValueError as e:
+        # Return the helpful error message from the underlying function
+        return f"Error: {str(e)}"
     
-    result = f"**{data['title']}** - {data['range']}\n\n"
+    result = f"**{data['title']}** - {data['range']}\n"
+    result += f"Available sheets: {', '.join(data['sheets'])}\n\n"
+    
     for row in data['values'][:20]:  # Limit rows
         result += " | ".join(str(cell) for cell in row) + "\n"
     
@@ -1240,6 +1281,7 @@ WORKSPACE_TOOLS = [
     add_sheet_to_spreadsheet,
     write_spreadsheet_data,
     list_spreadsheets,
+    search_spreadsheets,  # Search by name to find spreadsheet ID
     read_spreadsheet_data,
     # Docs
     list_google_docs,

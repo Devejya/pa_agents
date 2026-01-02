@@ -17,6 +17,13 @@ from pydantic import BaseModel
 from ..core.auth import TokenData, UserInfo, create_access_token, get_current_user
 from ..core.config import get_settings
 from ..core.audit import get_audit_logger, AuditAction, ResourceType
+from ..core.analytics import (
+    track_user_login,
+    track_user_logout,
+    track_app_opened,
+    track_oauth_error,
+    identify_user,
+)
 from ..middleware import get_client_ip, get_user_agent, set_current_user_id
 from ..db import get_db_pool
 from ..db.token_repository import TokenRepository
@@ -264,6 +271,12 @@ async def oauth_callback(
             
             if token_response.status_code != 200:
                 logger.error(f"Token exchange failed: {token_response.text}")
+                # Track OAuth error
+                track_oauth_error(
+                    user_id=None,
+                    error_type="token_exchange_failed",
+                    error_message=f"Status {token_response.status_code}",
+                )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Failed to exchange authorization code",
@@ -316,11 +329,19 @@ async def oauth_callback(
                 error_message="Email not in allowed list",
             )
             
+            # Track OAuth access denied
+            track_oauth_error(
+                user_id=None,
+                error_type="access_denied",
+                error_message=f"Email not in whitelist: {user_info.email}",
+            )
+            
             redirect_url = f"{settings.frontend_url}/login?error=access_denied&email={user_info.email}"
             return RedirectResponse(url=redirect_url)
         
         # Find or create user in our database (before saving tokens, so we can link them)
         user_id = None
+        is_new_user = False
         try:
             pool = await get_db_pool()
             user_repo = UserRepository(pool)
@@ -351,6 +372,7 @@ async def oauth_callback(
                         provider_email=user_info.email,
                     )
                     user_id = new_user["id"]
+                    is_new_user = True
                     logger.info(f"Created new user {user_id} for {user_info.email}")
             
         except Exception as e:
@@ -377,6 +399,17 @@ async def oauth_callback(
             user_agent=get_user_agent(),
             success=True,
         )
+        
+        # Track login event in PostHog
+        track_user_login(
+            user_id=user_id,
+            is_new_user=is_new_user,
+            login_method="google_oauth",
+        )
+        
+        # Identify user in PostHog (for user properties)
+        if user_id:
+            identify_user(user_id, {"login_method": "google_oauth"})
         
         # Trigger core user sync in background first (to create/update user record)
         background_tasks.add_task(
@@ -445,6 +478,9 @@ async def logout(
         ip_address=get_client_ip(),
     )
     
+    # Track logout event in PostHog
+    track_user_logout(user_id=current_user.user_id)
+    
     response.delete_cookie(key="auth_token")
     return {"message": "Logged out successfully"}
 
@@ -474,6 +510,9 @@ async def check_auth(request: Request):
     user = await get_optional_user(request, None)
     
     if user:
+        # Track app opened event in PostHog
+        track_app_opened(user_id=user.user_id)
+        
         return {
             "authenticated": True,
             "email": user.email,

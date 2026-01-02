@@ -1,0 +1,7 @@
+# Ignore secrets files with real values
+# The template files (*-secrets.json) are committed as examples
+# but if you create files with real values, they should be ignored
+
+# Keep the example templates but ignore any personal config
+!*-secrets.json
+

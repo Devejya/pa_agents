@@ -16,6 +16,7 @@ from typing import Optional
 
 from ..core.scheduler import register_job
 from ..core.user_network_client import get_user_network_client, UserNetworkAPIError
+from ..core.analytics import track_contact_sync
 from ..routes.auth import get_google_tokens
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,18 @@ async def sync_user_contacts(user_email: str) -> dict:
             'last_result': result,
         }
         
+        # Track contact sync event in PostHog
+        # Note: user_id not available here, but user_email is tracked via sync_type
+        track_contact_sync(
+            user_id=None,  # User ID not available in this context
+            contacts_added=result.get('added', 0),
+            contacts_updated=result.get('updated', 0),
+            contacts_total=result.get('added', 0) + result.get('updated', 0),
+            sync_type="scheduled",
+            success=result.get('success', False),
+            error_message=result['errors'][0] if result.get('errors') else None,
+        )
+        
         # Send notification if there were changes or errors
         try:
             await notify_sync_complete(user_email, result)
@@ -440,7 +453,7 @@ async def sync_single_contact(
             raise
 
 
-async def trigger_manual_sync(user_email: str) -> dict:
+async def trigger_manual_sync(user_email: str, user_id=None) -> dict:
     """
     Trigger an immediate sync for a specific user.
     
@@ -448,12 +461,26 @@ async def trigger_manual_sync(user_email: str) -> dict:
     
     Args:
         user_email: User's email address
+        user_id: Optional user UUID for analytics
         
     Returns:
         Sync result
     """
     logger.info(f"🏃 Manual sync triggered for {user_email}")
-    return await sync_user_contacts(user_email)
+    result = await sync_user_contacts(user_email)
+    
+    # Track manual sync event (override the scheduled sync tracking)
+    track_contact_sync(
+        user_id=user_id,
+        contacts_added=result.get('added', 0),
+        contacts_updated=result.get('updated', 0),
+        contacts_total=result.get('added', 0) + result.get('updated', 0),
+        sync_type="manual",
+        success=result.get('success', False),
+        error_message=result['errors'][0] if result.get('errors') else None,
+    )
+    
+    return result
 
 
 def get_sync_stats(user_email: Optional[str] = None) -> dict:

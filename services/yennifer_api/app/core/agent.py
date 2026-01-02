@@ -23,8 +23,10 @@ from .entity_resolution_tools import (
     set_entity_resolution_user,
     COSTLY_ACTIONS,
 )
+from .web_search_tools import WEB_SEARCH_TOOLS
 from .config import get_settings
 from .pii import mask_message_for_llm, mask_tool_call_args
+from .analytics import track_ai_error, track_fallback_shown, get_tracking_user
 
 
 SYSTEM_PROMPT = """You are Yennifer, an AI executive assistant. You help users manage their:
@@ -170,6 +172,32 @@ Notes with dates are surfaced when relevant (close to the date).
 
 ALWAYS save information the user provides. Build their network over time.
 
+## WEB SEARCH
+
+You have access to web_search for finding current information online.
+
+**WHEN TO USE:**
+- Current events, news, recent developments
+- Real-time data: weather, stocks, sports scores
+- Information that changes frequently
+- Facts you're uncertain about or that may have updated
+
+**WHEN NOT TO USE:**
+- User's personal data → use memory/calendar/email tools
+- Well-established facts you're confident about
+- User preferences → use get_user_memories
+
+**BEST PRACTICES:**
+1. Write specific, contextual queries (include dates, locations, names)
+2. Cite sources in your response: "According to [source]..."
+3. If results are outdated or unclear, acknowledge uncertainty
+4. Combine search results with your knowledge for comprehensive answers
+
+**EXAMPLE:**
+User: "What's the weather like in Toronto?"
+→ web_search("current weather Toronto Ontario")
+→ Synthesize results: "According to The Weather Network, Toronto is currently -5°C..."
+
 ## ENTITY RESOLUTION (CRITICAL - READ CAREFULLY)
 
 ### When User Mentions Someone by Name:
@@ -293,8 +321,8 @@ class YenniferAssistant:
             start_on="human",  # Ensure we start on a human message for coherent context
         )
         
-        # Combine all tools: workspace + memory + entity resolution
-        all_tools = WORKSPACE_TOOLS + MEMORY_TOOLS + ENTITY_RESOLUTION_TOOLS
+        # Combine all tools: workspace + memory + entity resolution + web search
+        all_tools = WORKSPACE_TOOLS + MEMORY_TOOLS + ENTITY_RESOLUTION_TOOLS + WEB_SEARCH_TOOLS
         
         # Create agent with all tools
         self._agent = create_react_agent(
@@ -435,6 +463,13 @@ class YenniferAssistant:
             if not assistant_response:
                 # No terminal message found - use fallback if available
                 assistant_response = fallback_response or "I apologize, I couldn't process that request. Could you try again?"
+                
+                # Track fallback shown event in PostHog
+                track_fallback_shown(
+                    user_id=get_tracking_user(),
+                    session_id=None,  # Session ID not available here
+                    reason="no_terminal_response" if fallback_response else "no_response",
+                )
             
             # =========================================================
             # IMPORTANT: Store ORIGINAL (unmasked) message in history
@@ -475,6 +510,16 @@ class YenniferAssistant:
             
         except Exception as e:
             error_msg = str(e)
+            
+            # Track AI error event in PostHog
+            error_type = "google_credentials" if ("No Google credentials" in error_msg or "re-authenticate" in error_msg) else "agent_error"
+            track_ai_error(
+                user_id=get_tracking_user(),
+                error_type=error_type,
+                error_message=error_msg[:200],  # Truncate for privacy
+                session_id=None,  # Session ID not available here
+            )
+            
             if "No Google credentials" in error_msg or "re-authenticate" in error_msg:
                 return "I don't have access to your Google account. Please log out and log back in to grant the necessary permissions."
             return f"I encountered an error: {error_msg}"
@@ -530,6 +575,10 @@ class YenniferAssistant:
         Args:
             history: List of messages with 'role', 'content', and optionally 'tool_calls'/'tool_call_id' keys
         """
+        # Validate and repair history before setting
+        # This catches orphan tool_calls that would cause LangChain validation errors
+        history = self._validate_and_repair_history(history)
+        
         self.chat_history = []
         for msg in history:
             if msg["role"] == "user":
@@ -545,3 +594,60 @@ class YenniferAssistant:
                     content=msg["content"],
                     tool_call_id=msg.get("tool_call_id", ""),
                 ))
+    
+    def _validate_and_repair_history(self, history: list[dict]) -> list[dict]:
+        """
+        Validate chat history and repair orphan tool_calls.
+        
+        LangChain/LangGraph requires every AIMessage with tool_calls to have
+        corresponding ToolMessages. Orphan tool_calls can occur if the server
+        is restarted during tool execution.
+        
+        Args:
+            history: List of message dicts
+            
+        Returns:
+            Repaired history with placeholder ToolMessages for orphan tool_calls
+        """
+        # Collect expected and existing tool_call IDs
+        expected_tool_calls = {}  # tool_call_id -> (index, tool_call_info)
+        existing_tool_ids = set()
+        
+        for i, msg in enumerate(history):
+            if msg["role"] == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tc_id = tc.get("id")
+                    if tc_id:
+                        expected_tool_calls[tc_id] = (i, tc)
+            elif msg["role"] == "tool" and msg.get("tool_call_id"):
+                existing_tool_ids.add(msg["tool_call_id"])
+        
+        # Find orphans
+        orphan_ids = set(expected_tool_calls.keys()) - existing_tool_ids
+        
+        if not orphan_ids:
+            return history
+        
+        # Log the repair
+        orphan_names = [expected_tool_calls[tc_id][1].get("name", "unknown") for tc_id in orphan_ids]
+        logger.warning(
+            f"Repairing {len(orphan_ids)} orphan tool_calls in agent history: {orphan_names}"
+        )
+        
+        # Build repaired history
+        repaired = []
+        for msg in history:
+            repaired.append(msg)
+            
+            if msg["role"] == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tc_id = tc.get("id")
+                    if tc_id in orphan_ids:
+                        tool_name = tc.get("name", "unknown")
+                        repaired.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": f"[Tool '{tool_name}' was interrupted. Please retry if needed.]",
+                        })
+        
+        return repaired

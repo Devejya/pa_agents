@@ -61,3 +61,6 @@ boto3>=1.34.0
 # Redis for hot cache tier
 redis>=5.0.0
 
+# PostHog Analytics
+posthog>=3.5.0
+
