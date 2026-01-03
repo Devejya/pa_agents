@@ -10,7 +10,7 @@ All endpoints require X-User-ID header for RLS enforcement.
 """
 
 import json
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -243,7 +243,7 @@ async def get_interests_by_name(
 
 @router.get("/traverse")
 async def traverse_relationships(
-    path: str = Query(..., description="Comma-separated path, e.g., 'sister,husband'"),
+    path: Annotated[str, Query(..., description="Comma-separated path, e.g., 'sister,husband'")],
     pool: DbPool,
     api_key: ApiKey,
     user_id: UserId,
