@@ -33,6 +33,27 @@ _sync_stats: dict[str, dict] = {}
 GOOGLE_CONTACTS_PROVIDER = "google_contacts"
 
 
+def _values_differ(existing: any, new: any) -> bool:
+    """
+    Compare two values, treating None and empty string as equivalent.
+    
+    This prevents false "updates" when comparing e.g. None vs '' from different sources.
+    
+    Args:
+        existing: Value from the existing person record
+        new: Value from the incoming Google contact
+        
+    Returns:
+        True if the values are meaningfully different, False otherwise
+    """
+    # Normalize None and empty string to None for comparison
+    if existing in (None, ''):
+        existing = None
+    if new in (None, ''):
+        new = None
+    return existing != new
+
+
 async def _get_user_id_for_email(user_email: str) -> Optional[str]:
     """
     Look up the user_id UUID for a given email address.
@@ -380,7 +401,7 @@ async def sync_single_contact(
         google_contact: Contact data from Google
         
     Returns:
-        'added', 'updated', or 'conflict'
+        'added', 'updated', 'unchanged', 'skipped', or 'conflict'
     """
     resource_name = google_contact.get('resourceName', '')
     
@@ -450,13 +471,23 @@ async def sync_single_contact(
         # Update existing person
         person_id = str(existing_person['id'])
         
-        # Only update fields that have values
-        update_data = {k: v for k, v in person_data.items() if v is not None}
+        # Compare fields and only include those that have actually changed
+        update_data = {}
+        for field, new_value in person_data.items():
+            if new_value is None:
+                continue
+            existing_value = existing_person.get(field)
+            if _values_differ(existing_value, new_value):
+                update_data[field] = new_value
         
+        # Determine result based on whether there are actual changes
         if update_data:
             await client.update_person(person_id, update_data)
+            result = 'updated'
+        else:
+            result = 'unchanged'
         
-        # Ensure external ID mapping exists
+        # Ensure external ID mapping exists (always do this regardless of data changes)
         if match_type != 'google_id':
             await client.upsert_external_id(
                 person_id,
@@ -465,8 +496,7 @@ async def sync_single_contact(
                 metadata={'etag': google_contact.get('etag')},
             )
         
-        logger.debug(f"Updated person {person_id} (matched by {match_type})")
-        return 'updated'
+        return result
     
     else:
         # Create new person
