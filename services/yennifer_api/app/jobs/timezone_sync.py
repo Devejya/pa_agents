@@ -13,8 +13,12 @@ from ..core.scheduler import register_job
 from ..core.google_services import get_user_calendar_timezone, load_user_tokens
 from ..db import get_db_pool
 from ..db.user_repository import UserRepository
+from ..db.integrations_repository import IntegrationsRepository
 
 logger = logging.getLogger(__name__)
+
+# Required scope for timezone sync - only users with this scope granted will be synced
+REQUIRED_SCOPE = "calendar.readonly"
 
 
 @register_job(
@@ -28,7 +32,7 @@ async def sync_user_timezones():
     """
     Sync all users' timezones from Google Calendar.
     
-    Iterates through all users with Google OAuth tokens and updates their
+    Iterates through all users with the calendar.readonly scope granted and updates their
     timezone in the local database based on their Google Calendar settings.
     
     This job runs daily to keep timezone information up-to-date, especially
@@ -38,18 +42,26 @@ async def sync_user_timezones():
     
     pool = await get_db_pool()
     user_repo = UserRepository(pool)
+    integrations_repo = IntegrationsRepository(pool)
     
-    # Get all users with Google OAuth tokens
+    # Get users who have the calendar.readonly scope granted
+    eligible_users = await integrations_repo.get_users_with_scope_granted(REQUIRED_SCOPE, provider='google')
+    
+    if not eligible_users:
+        logger.info(f"No users with {REQUIRED_SCOPE} scope granted, skipping sync")
+        return
+    
+    # Get user details including current timezone for eligible users
+    user_ids = [u['id'] for u in eligible_users]
     async with pool.acquire() as conn:
         users = await conn.fetch("""
-            SELECT DISTINCT u.id, u.email, u.timezone as current_tz
-            FROM users u
-            JOIN user_oauth_tokens t ON u.email = t.email
-            WHERE t.provider = 'google'
-        """)
+            SELECT id, email, timezone as current_tz
+            FROM users
+            WHERE id = ANY($1::uuid[])
+        """, user_ids)
     
     if not users:
-        logger.info("No users with Google OAuth tokens found, skipping sync")
+        logger.info("No users found after scope check, skipping sync")
         return
     
     logger.info(f"Found {len(users)} users to sync timezones for")

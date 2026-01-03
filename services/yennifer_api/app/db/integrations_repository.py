@@ -521,6 +521,69 @@ class IntegrationsRepository:
             return [dict(row) for row in rows]
     
     # =========================================================================
+    # Scope-Based User Queries (for scheduled jobs)
+    # =========================================================================
+    
+    async def get_users_with_scope_granted(
+        self,
+        scope_id: str,
+        provider: str = 'google'
+    ) -> List[Dict[str, Any]]:
+        """
+        Get users who have a specific scope granted (OAuth consent obtained).
+        
+        Used by scheduled jobs to filter users who have the required permissions.
+        Only returns users who:
+        1. Have a valid OAuth token for the provider
+        2. Have the specified scope with is_granted=TRUE
+        
+        Args:
+            scope_id: Scope identifier (e.g., 'contacts.readonly', 'calendar.readonly')
+            provider: OAuth provider (default: 'google')
+            
+        Returns:
+            List of dicts with 'id' (UUID) and 'email' for each eligible user
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT DISTINCT u.id, u.email
+                FROM users u
+                JOIN user_oauth_tokens t ON u.id = t.user_id
+                JOIN user_integration_scopes us ON u.id = us.user_id
+                WHERE t.provider = $1
+                  AND us.scope_id = $2
+                  AND us.is_granted = TRUE
+            """, provider, scope_id)
+            
+            return [dict(row) for row in rows]
+    
+    async def user_has_scope_granted(
+        self,
+        user_id: UUID,
+        scope_id: str
+    ) -> bool:
+        """
+        Check if a specific user has a scope granted.
+        
+        Args:
+            user_id: User's UUID
+            scope_id: Scope identifier
+            
+        Returns:
+            True if user has the scope granted, False otherwise
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT 1
+                FROM user_integration_scopes
+                WHERE user_id = $1
+                  AND scope_id = $2
+                  AND is_granted = TRUE
+            """, user_id, scope_id)
+            
+            return row is not None
+    
+    # =========================================================================
     # Bulk Operations for Migration
     # =========================================================================
     

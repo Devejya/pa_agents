@@ -23,6 +23,7 @@ from ..core.analytics import track_contact_sync
 from ..routes.auth import get_google_tokens
 from ..db import get_db_pool
 from ..db.user_repository import UserRepository
+from ..db.integrations_repository import IntegrationsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,9 @@ _sync_stats: dict[str, dict] = {}
 
 # Provider name for Google Contacts
 GOOGLE_CONTACTS_PROVIDER = "google_contacts"
+
+# Required scope for contact sync - only users with this scope granted will be synced
+REQUIRED_SCOPE = "contacts.readonly"
 
 
 def _values_differ(existing: any, new: any) -> bool:
@@ -141,6 +145,7 @@ async def get_users_due_for_sync() -> list[str]:
     Get list of user emails that need contact sync.
     
     Checks:
+    - Users with the contacts.readonly scope granted (OAuth consent obtained)
     - Users with valid Google OAuth tokens
     - Users whose sync state is 'idle' and next_sync_at has passed
     - Users who haven't had too many consecutive failures
@@ -149,19 +154,13 @@ async def get_users_due_for_sync() -> list[str]:
         List of user email addresses
     """
     try:
-        # Get all users from our database
+        # Get users who have the contacts.readonly scope granted
         pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            # Get users who have OAuth tokens (i.e., have authenticated)
-            users = await conn.fetch("""
-                SELECT DISTINCT u.id, u.email 
-                FROM users u
-                JOIN user_oauth_tokens t ON u.id = t.user_id
-                WHERE t.provider = 'google'
-            """)
+        repo = IntegrationsRepository(pool)
+        users = await repo.get_users_with_scope_granted(REQUIRED_SCOPE, provider='google')
         
         if not users:
-            logger.debug("No users with Google OAuth found")
+            logger.debug(f"No users with {REQUIRED_SCOPE} scope granted")
             return []
         
         users_due = []

@@ -243,6 +243,51 @@ async def _trigger_initial_contact_sync(user_email: str):
         logger.error(f"❌ Initial contact sync failed for {user_email}: {e}")
 
 
+async def _trigger_initial_timezone_sync(user_email: str):
+    """
+    Background task to sync user's timezone from Google Calendar after login.
+    
+    This runs asynchronously after the OAuth callback completes,
+    ensuring the user's timezone is set correctly for calendar operations
+    without waiting for the daily timezone sync job.
+    """
+    from ..core.google_services import get_user_calendar_timezone, load_user_tokens, _token_cache
+    
+    try:
+        logger.info(f"🕐 Triggering initial timezone sync for {user_email}")
+        
+        # Ensure tokens are loaded first
+        await load_user_tokens(user_email)
+        
+        # Fetch timezone from Google Calendar settings
+        new_tz = get_user_calendar_timezone(user_email)
+        
+        if new_tz and new_tz != "UTC":
+            # Update in database
+            pool = await get_db_pool()
+            user_repo = UserRepository(pool)
+            user = await user_repo.get_user_by_email(user_email)
+            
+            if user:
+                current_tz = user.get("timezone", "UTC")
+                if new_tz != current_tz:
+                    await user_repo.update_user_timezone(user["id"], new_tz)
+                    logger.info(f"✅ Updated timezone for {user_email}: {current_tz} -> {new_tz}")
+                    
+                    # Also update the token cache so it takes effect immediately
+                    if user_email in _token_cache:
+                        _token_cache[user_email]["timezone"] = new_tz
+                else:
+                    logger.debug(f"Timezone already correct for {user_email}: {new_tz}")
+            else:
+                logger.warning(f"⚠️ User not found for timezone sync: {user_email}")
+        else:
+            logger.debug(f"No timezone change needed for {user_email} (got: {new_tz})")
+            
+    except Exception as e:
+        logger.error(f"❌ Initial timezone sync failed for {user_email}: {e}")
+
+
 @router.get("/authorize/{integration_id}")
 async def authorize_integration(
     request: Request,
@@ -647,6 +692,10 @@ async def oauth_callback(
         # Trigger contact sync in background (don't block login)
         background_tasks.add_task(_trigger_initial_contact_sync, user_info.email)
         logger.info(f"📇 Scheduled initial contact sync for {user_info.email}")
+        
+        # Trigger timezone sync in background (ensures correct timezone for calendar)
+        background_tasks.add_task(_trigger_initial_timezone_sync, user_info.email)
+        logger.info(f"🕐 Scheduled initial timezone sync for {user_info.email}")
         
         # Determine redirect URL
         redirect_url = state or settings.frontend_url
