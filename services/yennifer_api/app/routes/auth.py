@@ -38,8 +38,17 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-# OAuth scopes for Google Workspace integration
-OAUTH_SCOPES = [
+# Minimal scopes for initial sign-in (authentication only)
+# Additional scopes are requested incrementally when user enables integrations
+MINIMAL_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+]
+
+# Legacy: Full OAuth scopes (kept for reference and migration)
+# New users get minimal scopes; integrations are added incrementally
+LEGACY_OAUTH_SCOPES = [
     # Basic authentication
     "openid",
     "email",
@@ -166,11 +175,14 @@ async def login(
     state = redirect_uri or settings.frontend_url
     
     # Build Google OAuth URL
+    # TODO: Once integrations migration is complete and all existing users are migrated,
+    # change this back to MINIMAL_SCOPES for incremental OAuth.
+    # For now, use LEGACY_OAUTH_SCOPES to avoid breaking existing users.
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": callback_url,
         "response_type": "code",
-        "scope": " ".join(OAUTH_SCOPES),
+        "scope": " ".join(LEGACY_OAUTH_SCOPES),  # Temporarily use full scopes
         "access_type": "offline",  # Get refresh token
         "prompt": "consent",  # Always show consent to get refresh token
         "state": state,
@@ -229,6 +241,214 @@ async def _trigger_initial_contact_sync(user_email: str):
             logger.warning(f"⚠️ Initial sync incomplete for {user_email}: {result.get('errors', [])}")
     except Exception as e:
         logger.error(f"❌ Initial contact sync failed for {user_email}: {e}")
+
+
+@router.get("/authorize/{integration_id}")
+async def authorize_integration(
+    request: Request,
+    integration_id: str,
+    redirect_uri: Optional[str] = Query(None, description="Where to redirect after authorization"),
+    current_user: TokenData = Depends(get_current_user),
+):
+    """
+    Initiate incremental OAuth for a specific integration.
+    
+    Uses Google's incremental authorization with include_granted_scopes=true
+    to add new scopes while keeping existing ones.
+    
+    Args:
+        integration_id: The integration to authorize (e.g., 'gmail', 'calendar')
+        redirect_uri: Where to redirect after authorization
+    """
+    from uuid import UUID
+    from ..db.integrations_repository import IntegrationsRepository
+    
+    settings = get_settings()
+    
+    if not settings.google_client_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google OAuth not configured",
+        )
+    
+    # Get user_id
+    user_id = UUID(current_user.user_id) if current_user.user_id else None
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID required for incremental authorization",
+        )
+    
+    # Get scopes needed for this integration
+    pool = await get_db_pool()
+    integrations_repo = IntegrationsRepository(pool)
+    
+    # Check if integration exists
+    integration = await integrations_repo.get_integration(integration_id)
+    if not integration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Integration '{integration_id}' not found",
+        )
+    
+    # Only support Google integrations for now
+    if integration["provider"] != "google":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Integration '{integration_id}' does not use Google OAuth",
+        )
+    
+    # Get scopes that need OAuth consent
+    scopes_needed = await integrations_repo.get_scopes_needing_oauth(user_id, integration_id)
+    
+    if not scopes_needed:
+        # All scopes already granted, just enable the integration
+        await integrations_repo.enable_integration(user_id, integration_id)
+        
+        # Redirect back to integrations page
+        redirect_url = redirect_uri or f"{settings.frontend_url}/integrations"
+        return RedirectResponse(url=redirect_url)
+    
+    # Build scope URIs list
+    scope_uris = [s["scope_uri"] for s in scopes_needed]
+    
+    # Build callback URL
+    callback_url = str(request.url_for("oauth_integration_callback"))
+    
+    # Encode state with integration_id and redirect_uri
+    import json
+    import base64
+    state_data = {
+        "integration_id": integration_id,
+        "redirect_uri": redirect_uri or f"{settings.frontend_url}/integrations",
+        "user_id": str(user_id),
+    }
+    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    
+    # Build Google OAuth URL for incremental authorization
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": callback_url,
+        "response_type": "code",
+        "scope": " ".join(scope_uris),
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",  # Key: keeps existing scopes
+        "state": state,
+        "login_hint": current_user.email,  # Pre-fill email
+    }
+    
+    auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+    
+    logger.info(f"Redirecting to Google OAuth for {integration_id} scopes: {scope_uris}")
+    return RedirectResponse(url=auth_url)
+
+
+@router.get("/authorize/callback", name="oauth_integration_callback")
+async def oauth_integration_callback(
+    request: Request,
+    code: str = Query(..., description="Authorization code from Google"),
+    state: str = Query(..., description="State parameter with integration info"),
+    error: Optional[str] = Query(None, description="Error from Google"),
+):
+    """
+    Handle OAuth callback for incremental authorization.
+    
+    Updates the user's token with new scopes and marks them as granted.
+    """
+    import json
+    import base64
+    from uuid import UUID
+    from ..db.integrations_repository import IntegrationsRepository
+    
+    settings = get_settings()
+    
+    # Decode state
+    try:
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        integration_id = state_data["integration_id"]
+        redirect_uri = state_data["redirect_uri"]
+        user_id = UUID(state_data["user_id"])
+    except Exception as e:
+        logger.error(f"Failed to decode state: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid state parameter",
+        )
+    
+    # Check for errors
+    if error:
+        logger.error(f"OAuth integration error for {integration_id}: {error}")
+        redirect_url = f"{redirect_uri}?error={error}&integration={integration_id}"
+        return RedirectResponse(url=redirect_url)
+    
+    # Build callback URL (must match what was sent to Google)
+    callback_url = str(request.url_for("oauth_integration_callback"))
+    
+    try:
+        # Exchange code for tokens
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": callback_url,
+                },
+            )
+            
+            if token_response.status_code != 200:
+                logger.error(f"Token exchange failed for {integration_id}: {token_response.text}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to exchange authorization code",
+                )
+            
+            tokens = token_response.json()
+        
+        # Get the user's email from the database
+        pool = await get_db_pool()
+        user_repo = UserRepository(pool)
+        user = await user_repo.get_user_by_id(user_id)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        user_email = user["email"]
+        
+        # Save the updated tokens
+        await save_google_tokens(user_email, tokens, user_id=str(user_id))
+        
+        # Mark scopes as granted
+        integrations_repo = IntegrationsRepository(pool)
+        
+        # Get scope IDs for this integration
+        integration_scopes = await integrations_repo.get_integration_scopes(integration_id)
+        scope_ids = [s["id"] for s in integration_scopes]
+        
+        # Mark them as granted
+        await integrations_repo.mark_scopes_granted(user_id, scope_ids)
+        
+        # Enable the integration
+        await integrations_repo.enable_integration(user_id, integration_id)
+        
+        logger.info(f"Successfully authorized {integration_id} for user {user_id}")
+        
+        # Redirect back to integrations page with success
+        redirect_url = f"{redirect_uri}?success=true&integration={integration_id}"
+        return RedirectResponse(url=redirect_url)
+        
+    except httpx.RequestError as e:
+        logger.error(f"HTTP request error during integration auth: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to communicate with Google",
+        )
 
 
 @router.get("/callback")

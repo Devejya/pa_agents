@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { ReauthProvider } from './contexts/ReauthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
@@ -10,12 +11,14 @@ import TasksPage from './pages/TasksPage';
 import ReportsPage from './pages/ReportsPage';
 import UpcomingPage from './pages/UpcomingPage';
 import RemindersPage from './pages/RemindersPage';
+import IntegrationsPage from './pages/IntegrationsPage';
 
 function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
+        <ReauthProvider>
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -31,6 +34,7 @@ function App() {
           >
             <Route index element={<Navigate to="chat" replace />} />
             <Route path="chat" element={<ChatPage />} />
+            <Route path="integrations" element={<IntegrationsPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="reports" element={<ReportsPage />} />
@@ -44,6 +48,7 @@ function App() {
           {/* Catch-all redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ReauthProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

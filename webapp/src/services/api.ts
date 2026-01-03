@@ -218,3 +218,140 @@ export async function getContactsWithRelationships(): Promise<ContactWithRelatio
   }
 }
 
+// ============== Integrations API ==============
+
+export interface IntegrationScope {
+  id: string;
+  scope_uri: string;
+  name: string;
+  description: string | null;
+  is_required: boolean;
+  display_order: number;
+  is_enabled: boolean;
+  is_granted: boolean;
+  granted_at: string | null;
+}
+
+export interface Integration {
+  id: string;
+  provider: string;
+  name: string;
+  description: string | null;
+  capability_summary: string | null;
+  icon_url: string | null;
+  display_order: number;
+  is_enabled: boolean;
+  enabled_at: string | null;
+  disabled_at: string | null;
+}
+
+export interface IntegrationDetail extends Integration {
+  scopes: IntegrationScope[];
+}
+
+export interface EnableResponse {
+  success: boolean;
+  needs_auth: boolean;
+  auth_url: string | null;
+  integration: IntegrationDetail | null;
+}
+
+export interface ScopeToggleResponse {
+  success: boolean;
+  needs_auth: boolean;
+  auth_url: string | null;
+  scope_id: string;
+  is_enabled: boolean;
+  is_granted: boolean;
+}
+
+/**
+ * Get all integrations with user's enabled status
+ */
+export async function getIntegrations(): Promise<Integration[]> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations`, {
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to get integrations');
+  const data = await response.json();
+  return data.integrations;
+}
+
+/**
+ * Get integration details with all scopes
+ */
+export async function getIntegrationDetail(integrationId: string): Promise<IntegrationDetail> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}`, {
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to get integration');
+  return response.json();
+}
+
+/**
+ * Enable an integration
+ */
+export async function enableIntegration(integrationId: string): Promise<EnableResponse> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}/enable`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to enable integration');
+  return response.json();
+}
+
+/**
+ * Disable an integration
+ */
+export async function disableIntegration(integrationId: string): Promise<EnableResponse> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}/disable`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to disable integration');
+  return response.json();
+}
+
+/**
+ * Enable a specific scope
+ */
+export async function enableScope(integrationId: string, scopeId: string): Promise<ScopeToggleResponse> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}/scopes/${scopeId}/enable`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to enable scope');
+  return response.json();
+}
+
+/**
+ * Disable a specific scope
+ */
+export async function disableScope(integrationId: string, scopeId: string): Promise<ScopeToggleResponse> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}/scopes/${scopeId}/disable`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to disable scope');
+  return response.json();
+}
+
+/**
+ * Enable all scopes for an integration
+ */
+export async function enableAllScopes(integrationId: string): Promise<EnableResponse> {
+  const response = await fetch(`${YENNIFER_API_URL}/api/v1/integrations/${integrationId}/enable-all-scopes`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  await handleResponse(response, 'Failed to enable all scopes');
+  return response.json();
+}
+

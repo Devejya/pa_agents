@@ -16,6 +16,7 @@ from .user_data_repository import (
     UserTasksRepository,
     MemoriesRepository,
 )
+from .integrations_repository import IntegrationsRepository
 
 __all__ = [
     "init_db",
@@ -33,5 +34,6 @@ __all__ = [
     "ImportantDatesRepository",
     "UserTasksRepository",
     "MemoriesRepository",
+    "IntegrationsRepository",
 ]
 

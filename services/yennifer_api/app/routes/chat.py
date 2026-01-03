@@ -494,6 +494,12 @@ async def send_message(
                 await session.load_user_context()
             except Exception as e:
                 logger.warning(f"Failed to load user context: {e}")
+            
+            # Load integration context (disabled integrations) for agent awareness
+            try:
+                await session.load_integration_context()
+            except Exception as e:
+                logger.warning(f"Failed to load integration context: {e}")
         
         # Determine if we should use database persistence
         db_session_id = None

@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     # Frontend URL (for redirects)
     frontend_url: str = "http://localhost:5173"
     
+    # API Base URL (for OAuth callbacks)
+    api_base_url: str = "http://localhost:8000"
+    
     # SendGrid Email Service
     sendgrid_api_key: str = ""
     sendgrid_from_email: str = "yennifer@yennifer.ai"

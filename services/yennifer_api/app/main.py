@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import auth, chat, workspace, jobs, contacts, user_data
+from .routes import auth, chat, workspace, jobs, contacts, user_data, integrations
 from .core.config import get_settings
 from .core.scheduler import start_scheduler, stop_scheduler
 from .core.audit import init_audit_logger, shutdown_audit_logger
@@ -140,6 +140,7 @@ app.include_router(workspace.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(contacts.router, prefix="/api/v1")
 app.include_router(user_data.router, prefix="/api/v1")
+app.include_router(integrations.router, prefix="/api/v1")
 
 
 @app.get("/health")

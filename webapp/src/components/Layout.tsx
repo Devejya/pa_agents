@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import ReauthModal from './ReauthModal';
+import { useReauth } from '../contexts/ReauthContext';
 
 export default function Layout() {
+  const { needsReauth, hideReauthModal } = useReauth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -77,6 +80,9 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* Re-authentication modal */}
+      <ReauthModal isOpen={needsReauth} onClose={hideReauthModal} />
     </div>
   );
 }

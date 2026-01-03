@@ -311,6 +311,7 @@ class YenniferAssistant:
         self.user_id = user_id
         self.chat_history = []
         self._user_context = ""  # Cached user context
+        self._integration_context = ""  # Cached integration context (disabled integrations)
         
         # Initialize LLM with API key from settings
         settings = get_settings()
@@ -353,6 +354,41 @@ class YenniferAssistant:
         """Load personalized user context for the system prompt."""
         if self.user_id:
             self._user_context = await build_user_context(self.user_id)
+    
+    async def load_integration_context(self):
+        """
+        Load integration context (disabled integrations) for the system prompt.
+        
+        This is called when session is created or when integrations change.
+        The context tells the agent which integrations are disabled so it can
+        inform the user appropriately.
+        """
+        if not self.user_id:
+            self._integration_context = ""
+            return
+        
+        from .tool_permissions import get_disabled_integrations_for_agent
+        
+        disabled = await get_disabled_integrations_for_agent(self.user_id)
+        
+        if not disabled:
+            self._integration_context = ""
+            return
+        
+        integration_list = "\n".join(
+            f"- {i['name']} ({i['capability_summary']})"
+            for i in disabled
+        )
+        
+        self._integration_context = f"""
+## DISABLED INTEGRATIONS
+
+The following integrations are currently disabled by the user:
+{integration_list}
+
+If the user requests features from disabled integrations, politely inform them:
+"I'd be happy to help with that! You'll need to enable the [Integration Name] integration in Settings > Integrations first."
+"""
     
     def _mask_chat_history(self) -> list:
         """
@@ -429,10 +465,12 @@ class YenniferAssistant:
         # =========================================================
         masked_message = mask_message_for_llm(message, role="user")
         
-        # Build system prompt with user context
+        # Build system prompt with user context and integration context
         full_system_prompt = SYSTEM_PROMPT
         if self._user_context:
             full_system_prompt += "\n" + self._user_context
+        if self._integration_context:
+            full_system_prompt += "\n" + self._integration_context
         
         # Build messages with system prompt and MASKED history
         messages = [SystemMessage(content=full_system_prompt)]

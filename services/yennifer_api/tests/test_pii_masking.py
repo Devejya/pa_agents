@@ -730,6 +730,574 @@ class TestPIIFlowIntegration:
             assert placeholder.startswith("[MASKED_"), f"Non-opaque placeholder found: {placeholder}"
 
 
+# =============================================================================
+# India-specific PII Masking Tests
+# =============================================================================
+
+class TestIndiaPIIPatterns:
+    """Test India-specific PII patterns: Aadhaar, PAN, IFSC, UPI, etc.
+    
+    All placeholders use OPAQUE format [MASKED_N] to prevent LLM type inference.
+    """
+    
+    def setup_method(self):
+        """Fresh context for each test."""
+        clear_pii_context()
+        set_pii_context(PIIContext())
+    
+    def teardown_method(self):
+        clear_pii_context()
+    
+    # =========================================================
+    # Aadhaar Number Tests
+    # =========================================================
+    
+    def test_mask_aadhaar_with_spaces(self):
+        """Aadhaar with spaces (2345 6789 0123) should be masked."""
+        text = "My Aadhaar is 2345 6789 0123"
+        result = mask_pii(text)
+        
+        assert "2345 6789 0123" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking for audit
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("aadhaar", 0) >= 1
+    
+    def test_mask_aadhaar_with_dashes(self):
+        """Aadhaar with dashes (2345-6789-0123) should be masked."""
+        text = "Aadhaar: 2345-6789-0123"
+        result = mask_pii(text)
+        
+        assert "2345-6789-0123" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_aadhaar_without_separators(self):
+        """Aadhaar without separators (234567890123) should be masked."""
+        text = "UID: 234567890123"
+        result = mask_pii(text)
+        
+        assert "234567890123" not in result
+        assert "[MASKED_" in result
+    
+    def test_aadhaar_first_digit_validation(self):
+        """Aadhaar starting with 0 or 1 should NOT be matched (invalid)."""
+        # Valid Aadhaar starts with 2-9
+        text1 = "Number: 0123 4567 8901"  # Invalid: starts with 0
+        text2 = "Number: 1234 5678 9012"  # Invalid: starts with 1
+        
+        result1 = mask_pii(text1)
+        result2 = mask_pii(text2)
+        
+        # These should NOT be masked as Aadhaar (but might match other patterns)
+        # Check that no AADHAAR type was tracked
+        ctx1 = get_pii_context()
+        assert ctx1.get_stats().get("aadhaar", 0) == 0
+    
+    # =========================================================
+    # PAN Tests
+    # =========================================================
+    
+    def test_mask_pan_person(self):
+        """PAN for person (4th char = P) should be masked."""
+        text = "My PAN is ABCPK1234J"
+        result = mask_pii(text)
+        
+        assert "ABCPK1234J" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("pan", 0) >= 1
+    
+    def test_mask_pan_company(self):
+        """PAN for company (4th char = C) should be masked."""
+        text = "Company PAN: AABCM1234F"
+        result = mask_pii(text)
+        
+        assert "AABCM1234F" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_pan_huf(self):
+        """PAN for HUF (4th char = H) should be masked."""
+        text = "HUF PAN: XYZHA5678B"
+        result = mask_pii(text)
+        
+        assert "XYZHA5678B" not in result
+        assert "[MASKED_" in result
+    
+    def test_pan_invalid_4th_char_not_matched(self):
+        """PAN with invalid 4th character should NOT be matched."""
+        # 4th char must be one of: A, B, C, F, G, H, L, J, P, T
+        text = "Invalid: ABCDK1234J"  # D is not a valid 4th char
+        result = mask_pii(text)
+        
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("pan", 0) == 0
+    
+    # =========================================================
+    # Indian Phone Number Tests
+    # =========================================================
+    
+    def test_mask_indian_phone_with_91_space(self):
+        """Indian phone +91 XXXXX XXXXX should be masked."""
+        text = "Call me at +91 98765 43210"
+        result = mask_pii(text)
+        
+        assert "98765 43210" not in result
+        assert "+91" not in result or "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("in_phone", 0) >= 1
+    
+    def test_mask_indian_phone_with_91_dash(self):
+        """Indian phone +91-XXXXX-XXXXX should be masked."""
+        text = "Phone: +91-98765-43210"
+        result = mask_pii(text)
+        
+        assert "98765-43210" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_indian_phone_without_plus(self):
+        """Indian phone 91XXXXXXXXXX should be masked."""
+        text = "Number: 919876543210"
+        result = mask_pii(text)
+        
+        assert "919876543210" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_indian_mobile_10_digit(self):
+        """10-digit Indian mobile starting with 6-9 should be masked."""
+        text = "Mobile: 9876543210"
+        result = mask_pii(text)
+        
+        assert "9876543210" not in result
+        assert "[MASKED_" in result
+    
+    def test_indian_phone_starts_with_6_7_8_9(self):
+        """Indian mobile numbers must start with 6, 7, 8, or 9."""
+        # Valid mobiles start with 6, 7, 8, 9
+        valid_numbers = ["9876543210", "8765432109", "7654321098", "6543210987"]
+        
+        for number in valid_numbers:
+            clear_pii_context()
+            set_pii_context(PIIContext())
+            text = f"Number: {number}"
+            result = mask_pii(text)
+            assert number not in result, f"{number} should be masked"
+    
+    # =========================================================
+    # IFSC Code Tests
+    # =========================================================
+    
+    def test_mask_ifsc_code(self):
+        """IFSC code (XXXX0XXXXXX) should be masked."""
+        text = "IFSC: HDFC0001234"
+        result = mask_pii(text)
+        
+        assert "HDFC0001234" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("ifsc", 0) >= 1
+    
+    def test_mask_ifsc_various_banks(self):
+        """IFSC codes for various banks should be masked."""
+        ifsc_codes = ["SBIN0001234", "ICIC0000001", "AXIS0000123", "PUNB0123456"]
+        
+        for ifsc in ifsc_codes:
+            clear_pii_context()
+            set_pii_context(PIIContext())
+            text = f"Bank IFSC: {ifsc}"
+            result = mask_pii(text)
+            assert ifsc not in result, f"{ifsc} should be masked"
+    
+    def test_ifsc_5th_char_must_be_zero(self):
+        """IFSC 5th character must be 0 - other values should not match."""
+        text = "Invalid IFSC: HDFC1001234"  # 5th char is 1, not 0
+        result = mask_pii(text)
+        
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("ifsc", 0) == 0
+    
+    # =========================================================
+    # UPI ID Tests
+    # =========================================================
+    
+    def test_mask_upi_okaxis(self):
+        """UPI ID with @okaxis should be masked."""
+        text = "Pay to myname@okaxis"
+        result = mask_pii(text)
+        
+        assert "myname@okaxis" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("upi", 0) >= 1
+    
+    def test_mask_upi_ybl(self):
+        """UPI ID with @ybl (PhonePe) should be masked."""
+        text = "UPI: username@ybl"
+        result = mask_pii(text)
+        
+        assert "username@ybl" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_upi_paytm(self):
+        """UPI ID with @paytm should be masked."""
+        text = "VPA: myaccount@paytm"
+        result = mask_pii(text)
+        
+        assert "myaccount@paytm" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_various_upi_handles(self):
+        """Various UPI bank handles should be masked."""
+        upi_ids = [
+            "user@oksbi",
+            "name@okicici", 
+            "account@okhdfc",
+            "pay@gpay",
+            "send@phonepe",
+            "money@sbi",
+            "transfer@icici",
+            "payment@hdfc",
+        ]
+        
+        for upi in upi_ids:
+            clear_pii_context()
+            set_pii_context(PIIContext())
+            text = f"Pay to {upi}"
+            result = mask_pii(text)
+            assert upi not in result, f"{upi} should be masked"
+    
+    def test_upi_vs_email_differentiation(self):
+        """UPI IDs should be masked before email patterns, emails should still work."""
+        text = "Pay to user@okaxis or email user@gmail.com"
+        result = mask_pii(text)
+        
+        # Both should be masked
+        assert "user@okaxis" not in result
+        assert "user@gmail.com" not in result
+        # Should have two different placeholders
+        assert "[MASKED_1]" in result
+        assert "[MASKED_2]" in result
+    
+    def test_regular_email_not_matched_as_upi(self):
+        """Regular email addresses should NOT be matched as UPI."""
+        text = "Email: test@gmail.com"
+        result = mask_pii(text)
+        
+        # Should be masked as EMAIL, not UPI
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("email", 0) >= 1
+        assert ctx.get_stats().get("upi", 0) == 0
+    
+    # =========================================================
+    # Vehicle Registration Tests
+    # =========================================================
+    
+    def test_mask_vehicle_reg_maharashtra(self):
+        """Maharashtra vehicle registration should be masked."""
+        text = "Car number: MH12AB1234"
+        result = mask_pii(text)
+        
+        assert "MH12AB1234" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("vehicle", 0) >= 1
+    
+    def test_mask_vehicle_reg_with_spaces(self):
+        """Vehicle registration with spaces should be masked."""
+        text = "Vehicle: MH 12 AB 1234"
+        result = mask_pii(text)
+        
+        assert "MH 12 AB 1234" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_vehicle_reg_delhi(self):
+        """Delhi vehicle registration should be masked."""
+        # Standard Delhi format: DL + district (2 digits) + series + number
+        text = "DL10CQ1234"
+        result = mask_pii(text)
+        
+        assert "DL10CQ1234" not in result
+        assert "[MASKED_" in result
+    
+    def test_mask_various_state_registrations(self):
+        """Vehicle registrations from various states should be masked."""
+        registrations = [
+            "KA01MG1234",   # Karnataka
+            "TN22C5678",    # Tamil Nadu
+            "DL10CQ9999",   # Delhi
+            "GJ01AB1234",   # Gujarat
+            "UP32AB1234",   # Uttar Pradesh
+        ]
+        
+        for reg in registrations:
+            clear_pii_context()
+            set_pii_context(PIIContext())
+            text = f"Vehicle: {reg}"
+            result = mask_pii(text)
+            assert reg not in result, f"{reg} should be masked"
+    
+    # =========================================================
+    # GSTIN Tests
+    # =========================================================
+    
+    def test_mask_gstin(self):
+        """GSTIN (15-char GST number) should be masked."""
+        text = "GST: 22AAAAA0000A1Z5"
+        result = mask_pii(text)
+        
+        assert "22AAAAA0000A1Z5" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("gstin", 0) >= 1
+    
+    def test_mask_gstin_various_states(self):
+        """GSTINs from various states should be masked."""
+        gstins = [
+            "27AABCU9603R1ZM",  # Maharashtra
+            "06AABCT1332L1ZG",  # Haryana
+            "29AABCT9603R1ZM",  # Karnataka
+        ]
+        
+        for gstin in gstins:
+            clear_pii_context()
+            set_pii_context(PIIContext())
+            text = f"GSTIN: {gstin}"
+            result = mask_pii(text)
+            assert gstin not in result, f"{gstin} should be masked"
+    
+    # =========================================================
+    # Indian Passport Tests
+    # =========================================================
+    
+    def test_mask_indian_passport_contextual(self):
+        """Indian passport number near 'passport' keyword should be masked."""
+        text = "My passport number is A1234567"
+        result = mask_pii(text)
+        
+        assert "A1234567" not in result
+        assert "[MASKED_" in result
+        # Verify type tracking
+        ctx = get_pii_context()
+        assert ctx.get_stats().get("in_passport", 0) >= 1
+    
+    def test_mask_passport_with_colon(self):
+        """Passport: A1234567 format should be masked."""
+        text = "Passport: J9876543"
+        result = mask_pii(text)
+        
+        assert "J9876543" not in result
+        assert "[MASKED_" in result
+    
+    # =========================================================
+    # FINANCIAL_ONLY Mode Tests for India PII
+    # =========================================================
+    
+    def test_financial_only_masks_aadhaar(self):
+        """Aadhaar should be masked in FINANCIAL_ONLY mode (national ID)."""
+        text = "Aadhaar: 2345 6789 0123"
+        result = mask_pii_financial_only(text)
+        
+        assert "2345 6789 0123" not in result
+        assert "[MASKED_" in result
+    
+    def test_financial_only_masks_pan(self):
+        """PAN should be masked in FINANCIAL_ONLY mode (tax ID)."""
+        text = "PAN: ABCPK1234J"
+        result = mask_pii_financial_only(text)
+        
+        assert "ABCPK1234J" not in result
+        assert "[MASKED_" in result
+    
+    def test_financial_only_masks_upi(self):
+        """UPI ID should be masked in FINANCIAL_ONLY mode (payment info)."""
+        text = "Pay to myname@okaxis"
+        result = mask_pii_financial_only(text)
+        
+        assert "myname@okaxis" not in result
+        assert "[MASKED_" in result
+    
+    def test_financial_only_masks_ifsc(self):
+        """IFSC should be masked in FINANCIAL_ONLY mode (bank code)."""
+        text = "IFSC: HDFC0001234"
+        result = mask_pii_financial_only(text)
+        
+        assert "HDFC0001234" not in result
+        assert "[MASKED_" in result
+    
+    def test_financial_only_masks_gstin(self):
+        """GSTIN should be masked in FINANCIAL_ONLY mode (tax ID)."""
+        text = "GST: 22AAAAA0000A1Z5"
+        result = mask_pii_financial_only(text)
+        
+        assert "22AAAAA0000A1Z5" not in result
+        assert "[MASKED_" in result
+    
+    def test_financial_only_keeps_indian_phone(self):
+        """Indian phone should stay visible in FINANCIAL_ONLY mode (contact info)."""
+        text = "Phone: +91 98765 43210"
+        result = mask_pii_financial_only(text)
+        
+        # Phone should be visible (same as email/phone for US users)
+        # Note: The +91 pattern might be partially matched, let's check the number part
+        assert "98765" in result or "+91" in result
+    
+    def test_financial_only_keeps_vehicle_reg(self):
+        """Vehicle registration should stay visible in FINANCIAL_ONLY mode."""
+        text = "Car: MH12AB1234"
+        result = mask_pii_financial_only(text)
+        
+        # Vehicle reg should be visible
+        assert "MH12AB1234" in result
+
+
+class TestIndiaPIIUnmasking:
+    """Test unmasking of India-specific PII types."""
+    
+    def setup_method(self):
+        """Fresh context for each test."""
+        clear_pii_context()
+        set_pii_context(PIIContext())
+    
+    def teardown_method(self):
+        clear_pii_context()
+    
+    def test_unmask_aadhaar(self):
+        """Unmasking should restore Aadhaar number."""
+        original = "My Aadhaar is 2345 6789 0123"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "2345 6789 0123" in unmasked
+    
+    def test_unmask_pan(self):
+        """Unmasking should restore PAN."""
+        original = "My PAN is ABCPK1234J"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "ABCPK1234J" in unmasked
+    
+    def test_unmask_indian_phone(self):
+        """Unmasking should restore Indian phone number."""
+        original = "Call me at +91 98765 43210"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "+91 98765 43210" in unmasked
+    
+    def test_unmask_upi_id(self):
+        """Unmasking should restore UPI ID."""
+        original = "Pay to myname@okaxis"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "myname@okaxis" in unmasked
+    
+    def test_unmask_ifsc(self):
+        """Unmasking should restore IFSC code."""
+        original = "Bank IFSC: HDFC0001234"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "HDFC0001234" in unmasked
+    
+    def test_unmask_vehicle_reg(self):
+        """Unmasking should restore vehicle registration."""
+        original = "Car: MH12AB1234"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "MH12AB1234" in unmasked
+    
+    def test_unmask_gstin(self):
+        """Unmasking should restore GSTIN."""
+        original = "GST: 22AAAAA0000A1Z5"
+        masked = mask_pii(original)
+        unmasked = unmask_pii(masked)
+        
+        assert "22AAAAA0000A1Z5" in unmasked
+
+
+class TestIndiaPIIIntegration:
+    """Integration tests for India PII in complete flow."""
+    
+    def setup_method(self):
+        """Fresh context for each test."""
+        clear_pii_context()
+        set_pii_context(PIIContext())
+    
+    def teardown_method(self):
+        clear_pii_context()
+    
+    def test_full_roundtrip_aadhaar(self):
+        """Test complete Aadhaar flow: mask → LLM response → unmask."""
+        # User sends Aadhaar
+        user_input = "Store my Aadhaar: 2345 6789 0123"
+        masked_input = mask_message_for_llm(user_input, role="user")
+        
+        # Verify masking
+        assert "2345 6789 0123" not in masked_input
+        assert "[MASKED_1]" in masked_input
+        
+        # Simulate LLM response
+        llm_response = "I've stored your identification number [MASKED_1] securely."
+        
+        # Unmask for user
+        final = unmask_pii(llm_response)
+        
+        assert "2345 6789 0123" in final
+        assert "[MASKED_1]" not in final
+    
+    def test_full_roundtrip_pan(self):
+        """Test complete PAN flow: mask → LLM response → unmask."""
+        user_input = "My PAN is ABCPK1234J"
+        masked_input = mask_message_for_llm(user_input, role="user")
+        
+        assert "ABCPK1234J" not in masked_input
+        assert "[MASKED_1]" in masked_input
+        
+        llm_response = "Your tax reference [MASKED_1] has been recorded."
+        final = unmask_pii(llm_response)
+        
+        assert "ABCPK1234J" in final
+    
+    def test_mixed_india_us_pii(self):
+        """Test masking both India and US PII in same message."""
+        user_input = "My SSN is 123-45-6789 and my Aadhaar is 2345 6789 0123"
+        masked_input = mask_message_for_llm(user_input, role="user")
+        
+        # Both should be masked
+        assert "123-45-6789" not in masked_input
+        assert "2345 6789 0123" not in masked_input
+        assert "[MASKED_1]" in masked_input
+        assert "[MASKED_2]" in masked_input
+        
+        # Verify type tracking
+        ctx = get_pii_context()
+        stats = ctx.get_stats()
+        assert stats.get("ssn", 0) >= 1
+        assert stats.get("aadhaar", 0) >= 1
+    
+    def test_india_pii_sensitive_keywords_masked(self):
+        """India-specific sensitive keywords should be replaced with neutral terms."""
+        user_input = "My Aadhaar number is 2345 6789 0123 and PAN card is ABCPK1234J"
+        masked = mask_message_for_llm(user_input, role="user")
+        
+        # Keywords should be neutralized
+        # "Aadhaar" -> "identification number"
+        # "PAN" -> "tax reference"
+        assert "Aadhaar" not in masked or "identification" in masked.lower()
+        
+        # Data should be masked
+        assert "2345 6789 0123" not in masked
+        assert "ABCPK1234J" not in masked
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

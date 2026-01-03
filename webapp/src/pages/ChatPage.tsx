@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import ChatMessage from '../components/ChatMessage';
 import { sendMessage, getChatHistory, setChatHistory, clearChatHistory, type ChatMessage as ChatMessageType } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useReauth } from '../contexts/ReauthContext';
 
 const STORAGE_KEY = 'yennifer_chat_history';
 
@@ -11,6 +12,7 @@ function formatTime(date: Date): string {
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const { checkForScopeError } = useReauth();
   const storageKey = `${STORAGE_KEY}_${user?.email || 'default'}`;
   
   const [messages, setMessages] = useState<(ChatMessageType & { timestamp?: string })[]>([]);
@@ -129,10 +131,17 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
+      // Check if this is a scope error - if so, show reauth modal
+      const isScopeError = checkForScopeError(error);
+      
       // Add error message
+      const errorContent = isScopeError
+        ? "I encountered an authentication issue. Please re-authenticate to restore full functionality."
+        : `I'm sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`;
+      
       const errorMessage: ChatMessageType & { timestamp: string } = {
         role: 'assistant',
-        content: `I'm sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        content: errorContent,
         timestamp: formatTime(new Date()),
       };
       setMessages((prev) => [...prev, errorMessage]);

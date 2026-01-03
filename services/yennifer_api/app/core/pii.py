@@ -44,6 +44,16 @@ class PIIType(Enum):
     ADDRESS = "ADDRESS"
     DOB = "DOB"
     IP_ADDRESS = "IP"
+    
+    # India-specific PII types
+    AADHAAR = "AADHAAR"           # 12-digit Indian unique ID
+    PAN = "PAN"                   # 10-char Indian tax ID (ABCDE1234F)
+    INDIAN_PHONE = "IN_PHONE"     # +91 format phone numbers
+    IFSC = "IFSC"                 # 11-char bank branch code
+    UPI_ID = "UPI"                # UPI Virtual Payment Address
+    VEHICLE_REG = "VEHICLE"       # Indian vehicle registration
+    IN_PASSPORT = "IN_PASSPORT"   # Indian passport number
+    GSTIN = "GSTIN"               # 15-char GST identification number
 
 
 class MaskingMode(Enum):
@@ -128,25 +138,136 @@ PII_PATTERNS: Dict[PIIType, List[re.Pattern]] = {
     PIIType.IP_ADDRESS: [
         re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b'),
     ],
+    
+    # ==========================================================================
+    # India-specific PII patterns
+    # ==========================================================================
+    
+    # Aadhaar Number - India's 12-digit unique identification number
+    # Format: XXXX XXXX XXXX or XXXX-XXXX-XXXX or XXXXXXXXXXXX
+    # First digit must be 2-9 (never starts with 0 or 1)
+    PIIType.AADHAAR: [
+        # With spaces: 2345 6789 0123
+        re.compile(r'\b[2-9]\d{3}\s\d{4}\s\d{4}\b'),
+        # With dashes: 2345-6789-0123
+        re.compile(r'\b[2-9]\d{3}-\d{4}-\d{4}\b'),
+        # Without separators: 234567890123 (12 digits starting with 2-9)
+        re.compile(r'\b[2-9]\d{11}\b'),
+    ],
+    
+    # PAN (Permanent Account Number) - India's 10-character tax identifier
+    # Format: ABCDE1234F
+    # Chars 1-3: Alphabetic (AAA-ZZZ)
+    # Char 4: Status code (A=AOP, B=BOI, C=Company, F=Firm, G=Government, 
+    #         H=HUF, J=AJP, L=Local Authority, P=Person, T=Trust)
+    # Char 5: First letter of surname/name
+    # Chars 6-9: Sequential digits (0001-9999)
+    # Char 10: Alphabetic check digit
+    PIIType.PAN: [
+        re.compile(r'\b[A-Z]{3}[ABCFGHLJPT][A-Z]\d{4}[A-Z]\b'),
+    ],
+    
+    # Indian Phone Numbers - 10-digit mobile numbers
+    # Mobile numbers start with 6, 7, 8, or 9
+    # Formats: +91 XXXXX XXXXX, +91-XXXXX-XXXXX, 91XXXXXXXXXX, 0XXXXXXXXXX
+    PIIType.INDIAN_PHONE: [
+        # +91 format with space/dash separators: +91 98765 43210 or +91-98765-43210
+        re.compile(r'\+91[-.\s]?[6-9]\d{4}[-.\s]?\d{5}\b'),
+        # 91 prefix without +: 919876543210
+        re.compile(r'\b91[6-9]\d{9}\b'),
+        # 10-digit mobile starting with 6-9 (standalone, more specific pattern)
+        re.compile(r'\b[6-9]\d{4}[-.\s]?\d{5}\b'),
+    ],
+    
+    # IFSC Code - Indian Financial System Code (bank branch identifier)
+    # Format: BANK0BRANCH (11 characters)
+    # Chars 1-4: Bank code (alphabetic)
+    # Char 5: Always 0 (reserved)
+    # Chars 6-11: Branch code (alphanumeric)
+    PIIType.IFSC: [
+        re.compile(r'\b[A-Z]{4}0[A-Z0-9]{6}\b'),
+    ],
+    
+    # UPI ID / VPA (Virtual Payment Address)
+    # Format: username@bankhandle
+    # Only match known UPI bank handles to avoid matching regular emails
+    PIIType.UPI_ID: [
+        re.compile(
+            r'\b[\w.-]+@(?:ok(?:sbi|icici|axis|hdfc|boi)|ybl|paytm|upi|sbi|icici|hdfc|phonepe|gpay|apl|axl|ibl|fbl|kotak|rbl|indus|federal|citi|sc|dbs|hsbc|jio|amazonpay|airtel|postbank|aubank|bandhan|idfc|idbi|barb|barodampay|pnb|bob|canara|unionbank|iob|centralbank|mahabank|indianbank)\b',
+            re.IGNORECASE
+        ),
+    ],
+    
+    # Indian Vehicle Registration Number
+    # Format: XX 00 XX 0000 (with variations)
+    # Chars 1-2: State code (MH, DL, KA, TN, etc.)
+    # Chars 3-4: District code (digits, 1-2 digits)
+    # Chars 5-7: Series code (1-3 alphabetic characters)
+    # Chars 8-11: Number (4 digits)
+    PIIType.VEHICLE_REG: [
+        # Standard format: MH 12 AB 1234 or MH12AB1234
+        re.compile(r'\b[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,3}[-\s]?\d{4}\b'),
+    ],
+    
+    # Indian Passport Number - 8 characters (1 letter + 7 digits)
+    # Format: A1234567
+    # Only match contextually near "passport" to avoid false positives
+    PIIType.IN_PASSPORT: [
+        # "passport: A1234567" or "passport #A1234567"
+        re.compile(r'(?:passport)[:\s#]+([A-Z][0-9]{7})\b', re.IGNORECASE),
+        # "passport number is A1234567" or "passport no. A1234567"
+        re.compile(r'(?:passport)\s+(?:number|no\.?|#)?\s*(?:is\s+)?([A-Z][0-9]{7})\b', re.IGNORECASE),
+    ],
+    
+    # GSTIN (GST Identification Number) - 15-character tax identifier
+    # Format: 22AAAAA0000A1Z5
+    # Chars 1-2: State code (01-37)
+    # Chars 3-12: PAN of the entity
+    # Char 13: Entity number (1-9 or A-Z)
+    # Char 14: Z (default, reserved)
+    # Char 15: Checksum (alphanumeric)
+    PIIType.GSTIN: [
+        re.compile(r'\b\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]Z[0-9A-Z]\b'),
+    ],
 }
 
 # Which PII types to mask in each mode
 MASKING_RULES: Dict[MaskingMode, set] = {
     MaskingMode.FULL: {
+        # Contact info
         PIIType.EMAIL,
         PIIType.PHONE,
+        # Highly sensitive (US/Canada)
         PIIType.SSN,
         PIIType.CREDIT_CARD,
         PIIType.BANK_ACCOUNT,
+        # Contextual
         PIIType.ADDRESS,
         PIIType.DOB,
         PIIType.IP_ADDRESS,
+        # India-specific (all masked in FULL mode)
+        PIIType.AADHAAR,
+        PIIType.PAN,
+        PIIType.INDIAN_PHONE,
+        PIIType.IFSC,
+        PIIType.UPI_ID,
+        PIIType.VEHICLE_REG,
+        PIIType.IN_PASSPORT,
+        PIIType.GSTIN,
     },
     MaskingMode.FINANCIAL_ONLY: {
+        # US/Canada financial
         PIIType.SSN,
         PIIType.CREDIT_CARD,
         PIIType.BANK_ACCOUNT,
-        # Email, Phone, Address visible in this mode
+        # India-specific financial/identity (sensitive)
+        PIIType.AADHAAR,      # National ID - always mask
+        PIIType.PAN,          # Tax ID - always mask
+        PIIType.IFSC,         # Bank code - mask for financial safety
+        PIIType.UPI_ID,       # Payment ID - mask for financial safety
+        PIIType.GSTIN,        # Business tax ID - mask
+        # Note: INDIAN_PHONE, VEHICLE_REG, IN_PASSPORT stay visible in this mode
+        # (same as EMAIL, PHONE, ADDRESS for US/Canada users)
     },
     MaskingMode.NONE: set(),  # Nothing masked
 }
@@ -257,12 +378,27 @@ class PIIContext:
         types_to_mask = MASKING_RULES.get(mode, set())
         
         # Apply patterns in order (most specific first)
+        # IMPORTANT Pattern order rules:
+        # 1. Longer patterns before shorter (16-digit card before 12-digit Aadhaar)
+        # 2. More specific patterns before generic (UPI before EMAIL)
+        # 3. India-specific before generic where format overlaps (INDIAN_PHONE before PHONE)
         for pii_type in [
-            PIIType.SSN,
-            PIIType.CREDIT_CARD,
-            PIIType.BANK_ACCOUNT,
-            PIIType.EMAIL,
-            PIIType.PHONE,
+            # Highest priority: Very specific patterns (most characters/most constrained)
+            PIIType.GSTIN,         # India: 15-char, very specific format
+            PIIType.CREDIT_CARD,   # 16-digit - MUST be before 12-digit Aadhaar!
+            PIIType.SSN,           # US/Canada SSN/SIN patterns (9-digit specific format)
+            PIIType.AADHAAR,       # India: 12-digit unique ID (after 16-digit card!)
+            PIIType.PAN,           # India: Very specific 10-char format ABCDE1234F
+            PIIType.IFSC,          # India: Bank code XXXX0XXXXXX (11 chars)
+            PIIType.IN_PASSPORT,   # India: Contextual passport pattern
+            PIIType.BANK_ACCOUNT,  # Contextual account patterns
+            # Medium priority: Contact patterns (India-specific before generic)
+            PIIType.UPI_ID,        # India: Must come BEFORE EMAIL (both use @)
+            PIIType.EMAIL,         # Generic email
+            PIIType.INDIAN_PHONE,  # India: Must come BEFORE PHONE (+91 format)
+            PIIType.PHONE,         # Generic phone
+            PIIType.VEHICLE_REG,   # India: Vehicle registration
+            # Lower priority: Contextual patterns
             PIIType.ADDRESS,
             PIIType.DOB,
             PIIType.IP_ADDRESS,
@@ -556,6 +692,38 @@ SENSITIVE_KEYWORDS = [
     (re.compile(r'\bbank account number\b', re.IGNORECASE), 'account reference', 'bank account number'),
     (re.compile(r'\baccount number\b', re.IGNORECASE), 'account reference', 'account number'),
     (re.compile(r'\brouting number\b', re.IGNORECASE), 'routing reference', 'routing number'),
+    
+    # ==========================================================================
+    # India-specific sensitive keywords
+    # ==========================================================================
+    
+    # Aadhaar (Indian national ID)
+    (re.compile(r'\bAadhaar\s*(?:number|card|ID)?\b', re.IGNORECASE), 'identification number', 'Aadhaar'),
+    (re.compile(r'\bAadhar\s*(?:number|card|ID)?\b', re.IGNORECASE), 'identification number', 'Aadhar'),  # Common misspelling
+    (re.compile(r'\bUID\s*(?:number)?\b'), 'identification', 'UID'),  # Unique ID (case-sensitive)
+    (re.compile(r'\bUnique\s*Identification\s*(?:number)?\b', re.IGNORECASE), 'identification', 'Unique Identification'),
+    
+    # PAN (Indian tax ID)
+    (re.compile(r'\bPAN\s*(?:card|number)?\b', re.IGNORECASE), 'tax reference', 'PAN'),
+    (re.compile(r'\bPermanent\s*Account\s*Number\b', re.IGNORECASE), 'tax reference', 'Permanent Account Number'),
+    
+    # GST (Indian business tax)
+    (re.compile(r'\bGSTIN\b', re.IGNORECASE), 'tax identifier', 'GSTIN'),
+    (re.compile(r'\bGST\s*(?:number|ID|identification)?\b', re.IGNORECASE), 'tax identifier', 'GST number'),
+    (re.compile(r'\bGoods\s*(?:and|&)\s*Services\s*Tax\s*(?:number|ID)?\b', re.IGNORECASE), 'tax identifier', 'Goods and Services Tax'),
+    
+    # IFSC (Indian bank code)
+    (re.compile(r'\bIFSC\s*(?:code)?\b', re.IGNORECASE), 'bank code', 'IFSC'),
+    (re.compile(r'\bIndian\s*Financial\s*System\s*Code\b', re.IGNORECASE), 'bank code', 'Indian Financial System Code'),
+    
+    # UPI (Indian payment system)
+    (re.compile(r'\bUPI\s*(?:ID|address)?\b', re.IGNORECASE), 'payment reference', 'UPI ID'),
+    (re.compile(r'\bVPA\b', re.IGNORECASE), 'payment reference', 'VPA'),
+    (re.compile(r'\bVirtual\s*Payment\s*Address\b', re.IGNORECASE), 'payment reference', 'Virtual Payment Address'),
+    
+    # Vehicle registration
+    (re.compile(r'\bvehicle\s*registration\s*(?:number)?\b', re.IGNORECASE), 'registration reference', 'vehicle registration'),
+    (re.compile(r'\bRC\s*(?:number|book)?\b', re.IGNORECASE), 'registration reference', 'RC'),  # Registration Certificate
 ]
 
 
