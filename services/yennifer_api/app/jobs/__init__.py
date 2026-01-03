@@ -8,6 +8,7 @@ Available jobs:
 - contact_sync: Syncs Google Contacts with User Network (every 30 minutes)
 - token_refresh: Refreshes OAuth tokens before expiry (every hour)
 - health_check: Heartbeat job for monitoring (every 5 minutes)
+- timezone_sync: Syncs user timezones from Google Calendar (daily at 3 AM)
 
 Usage:
     # Jobs are auto-registered when imported
@@ -44,6 +45,7 @@ def register_all_jobs():
     from . import health_check
     from . import contact_sync
     from . import core_user_sync
+    from . import timezone_sync
     
     _jobs_registered = True
     logger.info("✓ All background jobs registered")
@@ -55,5 +57,6 @@ def get_registered_jobs() -> list[str]:
         'health_check',
         'contact_sync',
         'core_user_sync',
+        'timezone_sync',
     ]
 

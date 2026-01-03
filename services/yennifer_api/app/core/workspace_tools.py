@@ -83,19 +83,25 @@ def get_current_user() -> str:
 @tool
 def get_current_datetime() -> str:
     """
-    Get the current date and time. Use this FIRST when creating calendar events 
-    to know what dates are valid (today and future dates).
+    Get the current date and time in the user's timezone. Use this FIRST when 
+    creating calendar events or querying schedules to know what dates are valid.
     
     Returns:
-        Current date, time, and example ISO format for calendar events.
+        Current date, time (in user's timezone), and example ISO format for calendar events.
     """
     from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from .google_services import get_cached_timezone
     
-    now = datetime.now()
+    user_email = get_current_user()
+    user_tz_str = get_cached_timezone(user_email)
+    tz = ZoneInfo(user_tz_str)
+    
+    now = datetime.now(tz)
     tomorrow = now + timedelta(days=1)
     next_week = now + timedelta(days=7)
     
-    return f"""📅 **Current Date & Time:**
+    return f"""📅 **Current Date & Time ({user_tz_str}):**
 - Today: {now.strftime('%A, %B %d, %Y')}
 - Current Time: {now.strftime('%I:%M %p')}
 
@@ -104,31 +110,49 @@ def get_current_datetime() -> str:
 - Tomorrow at 10am: `{tomorrow.strftime('%Y-%m-%d')}T10:00:00`
 - Next week same day: `{next_week.strftime('%Y-%m-%d')}T10:00:00`
 
-Always use {now.year} or {now.year + 1} for the year (never use past years like 2024)."""
+Always use {now.year} or {now.year + 1} for the year."""
 
 
 # ============== Calendar Tools ==============
 
 @tool
-def list_calendar_events(days_ahead: int = 7) -> str:
+def list_calendar_events(time_min: str, time_max: str) -> str:
     """
-    List upcoming calendar events.
+    List calendar events within a specific time range.
+    
+    IMPORTANT: Call get_current_datetime first to know today's date in the user's timezone.
     
     Args:
-        days_ahead: Number of days to look ahead (default: 7)
+        time_min: Start of range in ISO format (e.g., "2026-01-05T00:00:00")
+        time_max: End of range in ISO format (e.g., "2026-01-05T23:59:59")
         
     Returns:
-        List of upcoming events with title, time, and location
+        List of events with title, time, and location
+        
+    Examples:
+        - Tomorrow's schedule: time_min="2026-01-06T00:00:00", time_max="2026-01-06T23:59:59"
+        - Next week (Mon-Sun): time_min="2026-01-05T00:00:00", time_max="2026-01-11T23:59:59"
+        - Specific day: time_min="2026-01-10T00:00:00", time_max="2026-01-10T23:59:59"
     """
+    # Validation
+    try:
+        min_dt = datetime.fromisoformat(time_min.replace('Z', '+00:00'))
+        max_dt = datetime.fromisoformat(time_max.replace('Z', '+00:00'))
+        if min_dt >= max_dt:
+            return "❌ Error: time_min must be before time_max. Please check your date range."
+    except ValueError as e:
+        return f"❌ Error: Invalid date format. Use ISO format like '2026-01-05T00:00:00'. Details: {e}"
+    
     events = _list_calendar_events(
         user_email=get_current_user(),
-        max_results=10,
-        days_ahead=days_ahead,
+        time_min=time_min,
+        time_max=time_max,
+        max_results=50,
     )
     if not events:
-        return "No upcoming events found."
+        return "No events found in the specified time range."
     
-    result = "Upcoming calendar events:\n"
+    result = f"Calendar events ({len(events)} found):\n"
     for event in events:
         result += f"\n- **{event['summary']}**\n"
         
@@ -194,6 +218,10 @@ def create_calendar_event(
         Confirmation with event ID and link. Use the returned event_id for updates.
     """
     from datetime import datetime, timedelta
+    from .google_services import get_cached_timezone
+    
+    user_email = get_current_user()
+    user_tz = get_cached_timezone(user_email)
     
     now = datetime.now()
     
@@ -211,10 +239,11 @@ def create_calendar_event(
         attendees = [email.strip() for email in attendee_emails.split(",") if email.strip()]
     
     result = _create_calendar_event(
-        user_email=get_current_user(),
+        user_email=user_email,
         summary=summary,
         start_time=start_time,
         end_time=end_time,
+        user_timezone=user_tz,
         description=description,
         location=location,
         attendees=attendees,
@@ -252,9 +281,15 @@ def update_calendar_event(
     Returns:
         Confirmation with updated event info
     """
+    from .google_services import get_cached_timezone
+    
+    user_email = get_current_user()
+    user_tz = get_cached_timezone(user_email)
+    
     result = _update_calendar_event(
-        user_email=get_current_user(),
+        user_email=user_email,
         event_id=event_id,
+        user_timezone=user_tz,
         summary=summary if summary else None,
         start_time=start_time if start_time else None,
         end_time=end_time if end_time else None,

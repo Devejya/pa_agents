@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 # In-memory token cache for sync access
-# Structure: {email: {tokens: dict, loaded_at: datetime}}
+# Structure: {email: {tokens: dict, timezone: str, loaded_at: datetime}}
 _token_cache: dict[str, dict] = {}
 
 
 async def load_user_tokens(email: str) -> Optional[dict]:
     """
-    Load user tokens from the database into the cache.
+    Load user tokens and timezone from the database into the cache.
     
     Call this before using sync functions like get_google_credentials().
     
@@ -44,14 +44,30 @@ async def load_user_tokens(email: str) -> Optional[dict]:
         Token dictionary or None if not found
     """
     from ..routes.auth import get_google_tokens
+    from ..db.connection import get_db_pool
     
     tokens = await get_google_tokens(email)
     if tokens:
+        # Also fetch timezone from users table
+        user_timezone = "UTC"
+        try:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT timezone FROM users WHERE email = $1",
+                    email.lower()
+                )
+                if row and row["timezone"]:
+                    user_timezone = row["timezone"]
+        except Exception as e:
+            logger.warning(f"Failed to fetch timezone for {email}: {e}")
+        
         _token_cache[email] = {
             'tokens': tokens,
+            'timezone': user_timezone,
             'loaded_at': datetime.now(timezone.utc),
         }
-        logger.debug(f"Loaded tokens into cache for {email}")
+        logger.debug(f"Loaded tokens and timezone ({user_timezone}) into cache for {email}")
     return tokens
 
 
@@ -71,6 +87,32 @@ def _get_cached_tokens(email: str) -> Optional[dict]:
     if cached:
         return cached['tokens']
     return None
+
+
+def get_cached_timezone(email: str) -> str:
+    """
+    Get user's timezone from cache.
+    
+    Returns 'UTC' if not cached or if timezone is invalid.
+    
+    Args:
+        email: User's email address
+        
+    Returns:
+        IANA timezone string (e.g., 'America/New_York') or 'UTC' as fallback
+    """
+    cached = _token_cache.get(email)
+    if cached:
+        tz = cached.get('timezone', 'UTC')
+        # Validate timezone string
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)  # Throws if invalid
+            return tz
+        except Exception:
+            logger.warning(f"Invalid timezone '{tz}' for {email}, falling back to UTC")
+            return 'UTC'
+    return 'UTC'
 
 
 def clear_token_cache(email: Optional[str] = None) -> None:
@@ -137,9 +179,11 @@ async def refresh_access_token(email: str) -> Optional[str]:
             repo = TokenRepository(pool)
             await repo.save_tokens(email, tokens, provider="google")
             
-            # Update cache
+            # Update cache (preserve existing timezone if cached)
+            existing_tz = _token_cache.get(email, {}).get('timezone', 'UTC')
             _token_cache[email] = {
                 'tokens': tokens,
+                'timezone': existing_tz,
                 'loaded_at': datetime.now(timezone.utc),
             }
             
@@ -270,6 +314,25 @@ def get_gmail_service(email: str) -> Any:
 def get_calendar_service(email: str) -> Any:
     """Get Google Calendar API service for a user."""
     return build_google_service(email, "calendar", "v3")
+
+
+def get_user_calendar_timezone(user_email: str) -> str:
+    """
+    Fetch user's timezone from Google Calendar settings.
+    
+    Args:
+        user_email: User's email address
+        
+    Returns:
+        IANA timezone string (e.g., 'America/New_York') or 'UTC' on error
+    """
+    try:
+        service = get_calendar_service(user_email)
+        setting = service.settings().get(setting='timezone').execute()
+        return setting.get('value', 'UTC')
+    except Exception as e:
+        logger.warning(f"Failed to get calendar timezone for {user_email}: {e}")
+        return 'UTC'
 
 
 def get_contacts_service(email: str) -> Any:
