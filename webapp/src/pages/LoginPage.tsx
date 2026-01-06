@@ -42,7 +42,7 @@ export default function LoginPage() {
           Yennifer
         </h1>
         <p className="text-violet-200/70 text-lg">
-          Your AI Executive Assistant
+          Your AI Personal Assistant
         </p>
       </div>
 

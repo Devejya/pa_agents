@@ -212,7 +212,7 @@ export default function ChatPage() {
             </div>
             <div className="min-w-0">
               <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm sm:text-base">Yennifer</h2>
-              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">Your AI Executive Assistant</p>
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate">Your AI Personal Assistant</p>
             </div>
           </div>
 
