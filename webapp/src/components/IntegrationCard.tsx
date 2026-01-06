@@ -1,5 +1,25 @@
 import { type Integration } from '../services/api';
 
+// Import Google Suite icons
+import gmailIcon from '../assets/gmail-svgrepo-com.svg';
+import calendarIcon from '../assets/google-calendar-svgrepo-com.svg';
+import driveIcon from '../assets/google-drive-svgrepo-com.svg';
+import docsIcon from '../assets/gdoc-document-svgrepo-com.svg';
+import sheetsIcon from '../assets/Google_Sheets_logo_(2014-2020).svg';
+import slidesIcon from '../assets/Google_Slides_logo_(2014-2020).svg';
+import contactsIcon from '../assets/64px-Google_Contacts_icon_(2022).svg.png';
+
+// Map integration IDs to their icon URLs
+const iconMap: Record<string, string> = {
+  gmail: gmailIcon,
+  calendar: calendarIcon,
+  drive: driveIcon,
+  docs: docsIcon,
+  sheets: sheetsIcon,
+  slides: slidesIcon,
+  contacts: contactsIcon,
+};
+
 interface IntegrationCardProps {
   integration: Integration;
   isToggling: boolean;
@@ -33,7 +53,7 @@ export default function IntegrationCard({
               onClick={() => onToggle(integration.is_enabled)}
               disabled={isToggling}
               className={`
-                relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors
                 ${isToggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                 ${integration.is_enabled 
                   ? 'bg-emerald-500' 
@@ -80,25 +100,20 @@ export default function IntegrationCard({
 }
 
 function IntegrationIcon({ iconId }: { iconId: string }) {
-  // Map icon IDs to SVG icons
-  switch (iconId) {
-    case 'gmail':
-      return <GmailIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'calendar':
-      return <CalendarIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'contacts':
-      return <ContactsIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'drive':
-      return <DriveIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'sheets':
-      return <SheetsIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'docs':
-      return <DocsIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    case 'slides':
-      return <SlidesIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
-    default:
-      return <DefaultIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
+  const iconUrl = iconMap[iconId];
+  
+  if (iconUrl) {
+    return (
+      <img 
+        src={iconUrl} 
+        alt={`${iconId} icon`}
+        className="w-6 h-6 sm:w-7 sm:h-7"
+      />
+    );
   }
+  
+  // Fallback for integrations without custom icons
+  return <DefaultIcon className="w-6 h-6 sm:w-7 sm:h-7" />;
 }
 
 // Icons
@@ -106,78 +121,6 @@ function ChevronRightIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  );
-}
-
-function GmailIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <path d="M4 6L12 12L20 6" stroke="#EA4335" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-      <rect x="2" y="4" width="20" height="16" rx="2" stroke="#4285F4" strokeWidth="2"/>
-      <path d="M2 6L12 14L22 6" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function CalendarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <rect x="3" y="4" width="18" height="18" rx="2" stroke="#4285F4" strokeWidth="2"/>
-      <path d="M3 10H21" stroke="#4285F4" strokeWidth="2"/>
-      <path d="M8 2V6" stroke="#4285F4" strokeWidth="2" strokeLinecap="round"/>
-      <path d="M16 2V6" stroke="#4285F4" strokeWidth="2" strokeLinecap="round"/>
-      <circle cx="12" cy="16" r="2" fill="#EA4335"/>
-    </svg>
-  );
-}
-
-function ContactsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8" r="4" stroke="#4285F4" strokeWidth="2"/>
-      <path d="M4 20C4 16.6863 7.58172 14 12 14C16.4183 14 20 16.6863 20 20" stroke="#34A853" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function DriveIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <path d="M8 4L3 13H10L15 22L20 13L12 4H8Z" stroke="#4285F4" strokeWidth="2" strokeLinejoin="round"/>
-      <path d="M3 13H21" stroke="#FBBC05" strokeWidth="2"/>
-      <path d="M10 13L15 22H21L16 13" stroke="#34A853" strokeWidth="2" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function SheetsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="3" width="16" height="18" rx="2" stroke="#34A853" strokeWidth="2"/>
-      <path d="M4 9H20" stroke="#34A853" strokeWidth="2"/>
-      <path d="M4 15H20" stroke="#34A853" strokeWidth="2"/>
-      <path d="M12 9V21" stroke="#34A853" strokeWidth="2"/>
-    </svg>
-  );
-}
-
-function DocsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="3" width="16" height="18" rx="2" stroke="#4285F4" strokeWidth="2"/>
-      <path d="M8 8H16" stroke="#4285F4" strokeWidth="2" strokeLinecap="round"/>
-      <path d="M8 12H16" stroke="#4285F4" strokeWidth="2" strokeLinecap="round"/>
-      <path d="M8 16H12" stroke="#4285F4" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-function SlidesIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <rect x="3" y="5" width="18" height="14" rx="2" stroke="#FBBC05" strokeWidth="2"/>
-      <circle cx="12" cy="12" r="3" stroke="#FBBC05" strokeWidth="2"/>
     </svg>
   );
 }

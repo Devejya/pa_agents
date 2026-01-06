@@ -69,7 +69,19 @@ export default function LoginPage() {
           </div>
         )}
 
-        {error && error !== 'access_denied' && (
+        {error === 'user_creation_failed' && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+            <p className="text-red-300 text-center text-sm">
+              <span className="font-medium">Account Setup Failed</span>
+              <br />
+              <span className="text-red-300/70">
+                We couldn't set up your account. Please try again or contact support.
+              </span>
+            </p>
+          </div>
+        )}
+
+        {error && error !== 'access_denied' && error !== 'user_creation_failed' && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
             <p className="text-red-300 text-center text-sm">
               Authentication failed: {error}

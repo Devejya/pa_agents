@@ -641,9 +641,18 @@ async def oauth_callback(
                     logger.info(f"Created new user {user_id} for {user_info.email}")
             
         except Exception as e:
-            # Log but don't fail login - user can still use the app without user_id
+            # Fail login if we can't create/find user - user_id is required for integrations
             logger.error(f"Failed to create/find user for {user_info.email}: {e}")
-            # Continue without user_id for backwards compatibility
+            
+            # Track OAuth error
+            track_oauth_error(
+                user_id=None,
+                error_type="user_creation_failed",
+                error_message=f"Failed to create/find user: {str(e)}",
+            )
+            
+            redirect_url = f"{settings.frontend_url}/login?error=user_creation_failed"
+            return RedirectResponse(url=redirect_url)
         
         # Save Google tokens for API access (Calendar, Drive, etc.)
         # Now includes user_id if we have it

@@ -205,7 +205,7 @@ export default function IntegrationDetail({
                   onClick={handleMasterToggle}
                   disabled={togglingAll}
                   className={`
-                    relative inline-flex h-7 w-12 items-center rounded-full transition-colors
+                    toggle-switch relative inline-flex h-7 w-12 items-center rounded-full transition-colors
                     ${togglingAll ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                     ${integration.is_enabled 
                       ? 'bg-emerald-500' 
@@ -279,7 +279,7 @@ function ScopeToggle({ scope, isToggling, onToggle }: ScopeToggleProps) {
         onClick={onToggle}
         disabled={isToggling}
         className={`
-          relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 mt-0.5
+          toggle-switch relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0 mt-0.5
           ${isToggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
           ${scope.is_enabled 
             ? 'bg-emerald-500' 

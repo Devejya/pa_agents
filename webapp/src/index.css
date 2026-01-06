@@ -168,6 +168,12 @@ html {
     min-height: auto;
     min-width: auto;
   }
+  
+  /* Exception for toggle switches - they need exact dimensions for visual design */
+  .toggle-switch {
+    min-height: auto;
+    min-width: auto;
+  }
 }
 
 /* Improve focus styles for accessibility */

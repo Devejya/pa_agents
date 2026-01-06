@@ -4,6 +4,9 @@ Repository for integration management.
 Handles CRUD operations for user integrations and scopes.
 Integration definitions (integrations, integration_scopes) are seed data.
 User preferences (user_integrations, user_integration_scopes) are per-user.
+
+Note: user_integrations and user_integration_scopes tables have RLS enabled.
+Methods that query these tables must call set_rls_user() first.
 """
 
 import logging
@@ -12,6 +15,8 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import asyncpg
+
+from .connection import set_rls_user
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +142,9 @@ class IntegrationsRepository:
             List of integrations with user's enabled status
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integrations table access
+            await set_rls_user(conn, str(user_id))
+            
             # Get all active integrations with user's settings
             rows = await conn.fetch("""
                 SELECT 
@@ -174,6 +182,9 @@ class IntegrationsRepository:
             Integration with user settings and scopes, or None
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integrations table access
+            await set_rls_user(conn, str(user_id))
+            
             # Get integration with user settings
             integration_row = await conn.fetchrow("""
                 SELECT 
@@ -227,6 +238,9 @@ class IntegrationsRepository:
             Updated integration settings
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integrations table access
+            await set_rls_user(conn, str(user_id))
+            
             async with conn.transaction():
                 # Upsert user_integrations
                 await conn.execute("""
@@ -275,6 +289,9 @@ class IntegrationsRepository:
             Updated integration settings
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integrations table access
+            await set_rls_user(conn, str(user_id))
+            
             async with conn.transaction():
                 # Update user_integrations
                 await conn.execute("""
@@ -324,6 +341,9 @@ class IntegrationsRepository:
             Updated scope settings
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             row = await conn.fetchrow("""
                 INSERT INTO user_integration_scopes (user_id, scope_id, is_enabled)
                 VALUES ($1, $2, TRUE)
@@ -353,6 +373,9 @@ class IntegrationsRepository:
             Updated scope settings
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             row = await conn.fetchrow("""
                 INSERT INTO user_integration_scopes (user_id, scope_id, is_enabled)
                 VALUES ($1, $2, FALSE)
@@ -385,6 +408,9 @@ class IntegrationsRepository:
             return 0
         
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             # Upsert all granted scopes
             result = await conn.execute("""
                 INSERT INTO user_integration_scopes (user_id, scope_id, is_enabled, is_granted, granted_at)
@@ -418,6 +444,9 @@ class IntegrationsRepository:
             List of scope IDs (e.g., ['gmail.readonly', 'calendar.events'])
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             if granted_only:
                 rows = await conn.fetch("""
                     SELECT scope_id
@@ -449,6 +478,9 @@ class IntegrationsRepository:
             List of full OAuth scope URIs
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             if granted_only:
                 rows = await conn.fetch("""
                     SELECT s.scope_uri
@@ -481,6 +513,9 @@ class IntegrationsRepository:
             List of disabled integration definitions
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integrations table access
+            await set_rls_user(conn, str(user_id))
+            
             rows = await conn.fetch("""
                 SELECT 
                     i.id, i.provider, i.name, i.description, i.capability_summary,
@@ -509,6 +544,9 @@ class IntegrationsRepository:
             List of scope definitions needing OAuth consent
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             rows = await conn.fetch("""
                 SELECT s.id, s.scope_uri, s.name, s.description, s.is_required
                 FROM integration_scopes s
@@ -551,6 +589,7 @@ class IntegrationsRepository:
                 JOIN user_oauth_tokens t ON u.id = t.user_id
                 JOIN user_integration_scopes us ON u.id = us.user_id
                 WHERE t.provider = $1
+                  AND t.is_valid = TRUE
                   AND us.scope_id = $2
                   AND us.is_granted = TRUE
             """, provider, scope_id)
@@ -573,6 +612,9 @@ class IntegrationsRepository:
             True if user has the scope granted, False otherwise
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user_integration_scopes table access
+            await set_rls_user(conn, str(user_id))
+            
             row = await conn.fetchrow("""
                 SELECT 1
                 FROM user_integration_scopes
@@ -603,6 +645,9 @@ class IntegrationsRepository:
             Dict with counts of integrations and scopes enabled
         """
         async with self.pool.acquire() as conn:
+            # Set RLS context for user tables access
+            await set_rls_user(conn, str(user_id))
+            
             async with conn.transaction():
                 # Enable all integrations
                 integrations_result = await conn.execute("""
